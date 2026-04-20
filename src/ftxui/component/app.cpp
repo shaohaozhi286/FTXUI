@@ -517,6 +517,28 @@ void App::SelectionChange(std::function<void()> callback) {
   selection_on_change_ = std::move(callback);
 }
 
+// ACECODE-PATCH(drag-autoscroll): see app.hpp for rationale. Adds dx/dy to
+// start/end coordinates so a caller that just scrolled content by N rows can
+// keep the previously-anchored text under the same effective selection. Resets
+// selection_data_previous_ to force RefreshSelection() to re-run on the next
+// frame even if the diff would have looked the same.
+void App::ShiftSelection(int dx, int dy) {
+  if (selection_data_.empty) {
+    return;
+  }
+  selection_data_.start_x += dx;
+  selection_data_.start_y += dy;
+  selection_data_.end_x += dx;
+  selection_data_.end_y += dy;
+  // Force the next RunOnce to detect a diff and re-resolve the selection tree.
+  selection_data_previous_.start_x = -999999;
+  frame_valid_ = false;
+}
+
+bool App::HasPendingSelection() const {
+  return static_cast<bool>(selection_pending_);
+}
+
 /// @brief Return the currently active screen, or null if none.
 // static
 App* App::Active() {

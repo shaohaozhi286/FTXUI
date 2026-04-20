@@ -81,6 +81,15 @@ class App : public Screen {
   std::string GetSelection();
   void SelectionChange(std::function<void()> callback);
 
+  // ACECODE-PATCH(drag-autoscroll): expose selection coordinate compensation
+  // so external scrolling logic can keep the highlighted region aligned with
+  // the underlying text when the viewport scrolls underneath an in-progress
+  // drag. dx/dy are added to BOTH start and end coordinates (in screen
+  // cells). HasPendingSelection() reports whether the left button is
+  // currently held (i.e. selection_pending_ is non-null).
+  void ShiftSelection(int dx, int dy);
+  bool HasPendingSelection() const;
+
  private:
   void ExitNow();
 

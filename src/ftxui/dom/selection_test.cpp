@@ -218,5 +218,39 @@ TEST(SelectionTest, HBoxSaturatedSelection) {
             "         ");
 }
 
+// 全角字符（CJK）选区测试：Utf8ToGlyphs 对全角字符会产出 (字符, "") 两项，
+// 分别占据终端相邻两列。之前 Text::Select 只判定第一列，导致用户从全角字符
+// 第二列（续列）起拖时会漏掉该字符。下列三个用例验证修复后的行为。
+
+// 场景：在 "你好世界" 上从 col=1（你的续列）拖到 col=3（好的续列），
+// 修复前返回 "好"，修复后应完整返回 "你好"。
+TEST(SelectionTest, CjkSelectionStartOnTrailingCell) {
+  auto element = text("你好世界");
+  auto screen = App::FixedSize(16, 1);
+  Selection selection(1, 0, 3, 0);
+  Render(screen, element.get(), selection);
+  EXPECT_EQ(selection.GetParts(), "你好");
+}
+
+// 场景：单点击选区正好落在全角字符的续列 (col=1)，修复前返回空串，
+// 修复后应返回该全角字符 "你"。
+TEST(SelectionTest, CjkSelectionSingleCellOnTrailingCell) {
+  auto element = text("你好世界");
+  auto screen = App::FixedSize(16, 1);
+  Selection selection(1, 0, 1, 0);
+  Render(screen, element.get(), selection);
+  EXPECT_EQ(selection.GetParts(), "你");
+}
+
+// 场景：ASCII 与 CJK 混排 "Hi你好"，从 col=3（你的续列）拖到 col=5（好的续列），
+// 修复前返回 "好"，修复后应返回 "你好"。验证混排场景无回归。
+TEST(SelectionTest, CjkSelectionMixedAscii) {
+  auto element = text("Hi你好");
+  auto screen = App::FixedSize(10, 1);
+  Selection selection(3, 0, 5, 0);
+  Render(screen, element.get(), selection);
+  EXPECT_EQ(selection.GetParts(), "你好");
+}
+
 }  // namespace ftxui
 // NOLINTEND

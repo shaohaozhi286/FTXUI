@@ -46,11 +46,21 @@ class Text : public Node {
 
     std::stringstream ss;
     int x = box_.x_min;
-    for (const auto& cell : Utf8ToGlyphs(text_)) {
+    const auto glyphs = Utf8ToGlyphs(text_);
+    for (size_t i = 0; i < glyphs.size(); ++i) {
+      const auto& cell = glyphs[i];
       if (cell == "\n") {
         continue;
       }
-      if (selection_start_ <= x && x <= selection_end_) {
+      // Full-width glyphs emit a trailing empty continuation entry; treat them
+      // as occupying [x, x+1] so the glyph is included when the selection
+      // overlaps either column.
+      const bool is_wide_lead =
+          !cell.empty() && i + 1 < glyphs.size() && glyphs[i + 1].empty();
+      const int cell_right = is_wide_lead ? x + 1 : x;
+      const bool overlap =
+          (x <= selection_end_) && (cell_right >= selection_start_);
+      if (overlap && !cell.empty()) {
         ss << cell;
       }
       x++;
@@ -66,7 +76,9 @@ class Text : public Node {
       return;
     }
 
-    for (const auto& cell : Utf8ToGlyphs(text_)) {
+    const auto glyphs = Utf8ToGlyphs(text_);
+    for (size_t i = 0; i < glyphs.size(); ++i) {
+      const auto& cell = glyphs[i];
       if (x > box_.x_max) {
         break;
       }
@@ -77,7 +89,10 @@ class Text : public Node {
 
       if (has_selection) {
         auto selectionTransform = screen.GetSelectionStyle();
-        if ((x >= selection_start_) && (x <= selection_end_)) {
+        const bool is_wide_lead =
+            !cell.empty() && i + 1 < glyphs.size() && glyphs[i + 1].empty();
+        const int cell_right = is_wide_lead ? x + 1 : x;
+        if ((x <= selection_end_) && (cell_right >= selection_start_)) {
           selectionTransform(screen.CellAt(x, y));
         }
       }
