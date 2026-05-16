@@ -95,6 +95,9 @@ class App : public Screen {
 
   void Install();
   void Uninstall();
+  void EnableMouseTracking(bool flush);
+  bool CursorPositionIsUsable(int x, int y) const;
+  bool IsTerminalOutputPrimaryScreen() const;
 
   void PreMain();
   void PostMain();
@@ -133,6 +136,8 @@ class App : public Screen {
   const bool use_alternative_screen_;
 
   bool track_mouse_ = true;
+  bool mouse_tracking_enabled_ = false;
+  bool defer_mouse_tracking_until_cursor_position_ = false;
 
   std::string set_cursor_position_;
   std::string reset_cursor_position_;

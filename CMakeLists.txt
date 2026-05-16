@@ -8,6 +8,7 @@ option(FTXUI_DEV_WARNINGS "Enable more compiler warnings and warnings as errors"
 option(FTXUI_ENABLE_COVERAGE "Execute code coverage" OFF)
 option(FTXUI_ENABLE_INSTALL "Generate the install target" ON)
 option(FTXUI_QUIET "Set to ON for FTXUI to be quiet" OFF)
+option(ACECODE_TUI_INPUT_TRACE "Enable ACECode-specific FTXUI input tracing" OFF)
 
 if (FTXUI_BUILD_MODULES)
   cmake_minimum_required(VERSION 3.28.2)
@@ -160,6 +161,10 @@ add_library(component
 
 target_link_libraries(dom PUBLIC screen)
 target_link_libraries(component PUBLIC dom)
+
+target_compile_definitions(component PRIVATE
+  $<$<BOOL:${ACECODE_TUI_INPUT_TRACE}>:ACECODE_TUI_INPUT_TRACE=1>
+)
 
 include(cmake/ftxui_set_options.cmake)
 ftxui_set_options(screen)

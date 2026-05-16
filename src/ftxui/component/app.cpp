@@ -9,12 +9,15 @@
 #include <csignal>  // for signal, SIGTSTP, SIGABRT, SIGWINCH, raise, SIGFPE, SIGILL, SIGINT, SIGSEGV, SIGTERM, __sighandler_t, size_t
 #include <cstdint>
 #include <cstdio>                    // for fileno, stdin
+#include <fstream>
 #include <ftxui/component/task.hpp>  // for Task, Closure, AnimationTask
 #include <ftxui/screen/screen.hpp>  // for Cell, Screen::Cursor, Screen, Screen::Cursor::Hidden
 #include <functional>        // for function
 #include <initializer_list>  // for initializer_list
 #include <iostream>  // for cout, ostream, operator<<, basic_ostream, endl, flush
 #include <memory>
+#include <mutex>
+#include <sstream>
 #include <stack>  // for stack
 #include <string>
 #include <string_view>
@@ -97,6 +100,79 @@ void OnExit() {
     on_exit_functions.pop();
   }
 }
+
+#ifndef ACECODE_TUI_INPUT_TRACE
+#define ACECODE_TUI_INPUT_TRACE 0
+#endif
+
+#if ACECODE_TUI_INPUT_TRACE
+std::mutex& AcecodeTraceMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+const char* MouseButtonName(Mouse::Button button) {
+  switch (button) {
+    case Mouse::Left:
+      return "Left";
+    case Mouse::Middle:
+      return "Middle";
+    case Mouse::Right:
+      return "Right";
+    case Mouse::None:
+      return "None";
+    case Mouse::WheelUp:
+      return "WheelUp";
+    case Mouse::WheelDown:
+      return "WheelDown";
+    case Mouse::WheelLeft:
+      return "WheelLeft";
+    case Mouse::WheelRight:
+      return "WheelRight";
+  }
+  return "?";
+}
+
+const char* MouseMotionName(Mouse::Motion motion) {
+  switch (motion) {
+    case Mouse::Released:
+      return "Released";
+    case Mouse::Pressed:
+      return "Pressed";
+    case Mouse::Moved:
+      return "Moved";
+  }
+  return "?";
+}
+
+bool TraceMouseEvent(const Mouse& mouse) {
+  return mouse.button == Mouse::Left &&
+         (mouse.motion == Mouse::Pressed || mouse.motion == Mouse::Moved ||
+          mouse.motion == Mouse::Released);
+}
+
+std::string MouseForTrace(const Mouse& mouse) {
+  std::ostringstream out;
+  out << "button=" << MouseButtonName(mouse.button)
+      << " motion=" << MouseMotionName(mouse.motion) << " x=" << mouse.x
+      << " y=" << mouse.y << " shift=" << (mouse.shift ? 1 : 0)
+      << " meta=" << (mouse.meta ? 1 : 0)
+      << " ctrl=" << (mouse.control ? 1 : 0);
+  return out.str();
+}
+
+void AcecodeTrace(std::string message) {
+  std::lock_guard<std::mutex> lock(AcecodeTraceMutex());
+  std::ofstream out("acecode.log", std::ios::app);
+  if (!out.is_open()) {
+    return;
+  }
+  const auto now = std::chrono::system_clock::now().time_since_epoch();
+  const auto ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+  out << ms << " DBG [ftxui-app] " << message << '\n';
+}
+#endif
 
 #if defined(_WIN32)
 
@@ -366,6 +442,57 @@ void App::TrackMouse(bool enable) {
   track_mouse_ = enable;
 }
 
+void App::EnableMouseTracking(bool flush) {
+  if (!track_mouse_ || mouse_tracking_enabled_) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("EnableMouseTracking skipped track_mouse=" +
+                 std::to_string(track_mouse_ ? 1 : 0) +
+                 " enabled=" +
+                 std::to_string(mouse_tracking_enabled_ ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_) +
+                 " cursor=(" + std::to_string(cursor_x_) + "," +
+                 std::to_string(cursor_y_) + ")");
+#endif
+    return;
+  }
+#if ACECODE_TUI_INPUT_TRACE
+  AcecodeTrace("EnableMouseTracking flush=" + std::to_string(flush ? 1 : 0) +
+               " frame=" + std::to_string(frame_count_) + " cursor=(" +
+               std::to_string(cursor_x_) + "," +
+               std::to_string(cursor_y_) + ")");
+#endif
+  TerminalSend(Set({DECMode::kMouseVt200}));
+  TerminalSend(Set({DECMode::kMouseAnyEvent}));
+  TerminalSend(Set({DECMode::kMouseUrxvtMode}));
+  TerminalSend(Set({DECMode::kMouseSgrExtMode}));
+  if (flush) {
+    TerminalFlush();
+  }
+  mouse_tracking_enabled_ = true;
+}
+
+bool App::IsTerminalOutputPrimaryScreen() const {
+  return dimension_ == Dimension::TerminalOutput && !use_alternative_screen_;
+}
+
+bool App::CursorPositionIsUsable(int x, int y) const {
+  if (!IsTerminalOutputPrimaryScreen()) {
+    return true;
+  }
+  if (x < 1 || y < 1) {
+    return false;
+  }
+
+  const Dimensions terminal = Terminal::Size();
+  if (terminal.dimx > 0 && dimx_ > 0 && x + dimx_ - 1 > terminal.dimx) {
+    return false;
+  }
+  if (terminal.dimy > 0 && dimy_ > 0 && y + dimy_ - 1 > terminal.dimy) {
+    return false;
+  }
+  return true;
+}
+
 /// @brief Enable or disable automatic piped input handling.
 /// When enabled, FTXUI will detect piped input and redirect stdin from /dev/tty
 /// for keyboard input, allowing applications to read piped data while still
@@ -524,12 +651,34 @@ void App::SelectionChange(std::function<void()> callback) {
 // frame even if the diff would have looked the same.
 void App::ShiftSelection(int dx, int dy) {
   if (selection_data_.empty) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("ShiftSelection skipped empty dx=" + std::to_string(dx) +
+                 " dy=" + std::to_string(dy) + " frame=" +
+                 std::to_string(frame_count_));
+#endif
     return;
   }
+#if ACECODE_TUI_INPUT_TRACE
+  AcecodeTrace("ShiftSelection apply dx=" + std::to_string(dx) +
+               " dy=" + std::to_string(dy) + " before=(" +
+               std::to_string(selection_data_.start_x) + "," +
+               std::to_string(selection_data_.start_y) + ")->(" +
+               std::to_string(selection_data_.end_x) + "," +
+               std::to_string(selection_data_.end_y) + ") frame=" +
+               std::to_string(frame_count_));
+#endif
   selection_data_.start_x += dx;
   selection_data_.start_y += dy;
   selection_data_.end_x += dx;
   selection_data_.end_y += dy;
+#if ACECODE_TUI_INPUT_TRACE
+  AcecodeTrace("ShiftSelection after=(" +
+               std::to_string(selection_data_.start_x) + "," +
+               std::to_string(selection_data_.start_y) + ")->(" +
+               std::to_string(selection_data_.end_x) + "," +
+               std::to_string(selection_data_.end_y) + ") frame=" +
+               std::to_string(frame_count_));
+#endif
   // Force the next RunOnce to detect a diff and re-resolve the selection tree.
   selection_data_previous_.start_x = -999999;
   frame_valid_ = false;
@@ -548,6 +697,20 @@ App* App::Active() {
 // private
 void App::Install() {
   frame_valid_ = false;
+  mouse_tracking_enabled_ = false;
+  defer_mouse_tracking_until_cursor_position_ = false;
+#if ACECODE_TUI_INPUT_TRACE
+  AcecodeTrace("Install begin track_mouse=" +
+               std::to_string(track_mouse_ ? 1 : 0) +
+               " alt_screen=" +
+               std::to_string(use_alternative_screen_ ? 1 : 0) +
+               " terminal_output=" +
+               std::to_string(
+                   dimension_ == Dimension::TerminalOutput ? 1 : 0) +
+               " frame=" + std::to_string(frame_count_) + " cursor=(" +
+               std::to_string(cursor_x_) + "," +
+               std::to_string(cursor_y_) + ")");
+#endif
 
   // Flush the buffer for stdout to ensure whatever the user has printed before
   // is fully applied before we start modifying the terminal configuration. This
@@ -705,10 +868,33 @@ void App::Install() {
   });
 
   if (track_mouse_) {
-    enable({DECMode::kMouseVt200});
-    enable({DECMode::kMouseAnyEvent});
-    enable({DECMode::kMouseUrxvtMode});
-    enable({DECMode::kMouseSgrExtMode});
+    on_exit_functions.emplace(
+        [this] { TerminalSend(Reset({DECMode::kMouseVt200})); });
+    on_exit_functions.emplace(
+        [this] { TerminalSend(Reset({DECMode::kMouseAnyEvent})); });
+    on_exit_functions.emplace(
+        [this] { TerminalSend(Reset({DECMode::kMouseUrxvtMode})); });
+    on_exit_functions.emplace(
+        [this] { TerminalSend(Reset({DECMode::kMouseSgrExtMode})); });
+
+    // ACECODE-PATCH(mouse-origin): In TerminalOutput mode, FTXUI must learn
+    // the frame origin from a cursor-position report before translating mouse
+    // coordinates. If mouse tracking is enabled before that report is handled,
+    // early drag-selection events can be translated with a stale origin and
+    // render the highlighted selection several rows above the pointer.
+    defer_mouse_tracking_until_cursor_position_ =
+        IsTerminalOutputPrimaryScreen();
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("Install mouse setup defer_until_cursor_position=" +
+                 std::to_string(
+                     defer_mouse_tracking_until_cursor_position_ ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_) + " cursor=(" +
+                 std::to_string(cursor_x_) + "," +
+                 std::to_string(cursor_y_) + ")");
+#endif
+    if (!defer_mouse_tracking_until_cursor_position_) {
+      EnableMouseTracking(false);
+    }
   }
 
   // After installing the new configuration, flush it to the terminal to
@@ -718,6 +904,14 @@ void App::Install() {
   quit_ = false;
 
   PostAnimationTask();
+#if ACECODE_TUI_INPUT_TRACE
+  AcecodeTrace("Install end mouse_tracking_enabled=" +
+               std::to_string(mouse_tracking_enabled_ ? 1 : 0) +
+               " defer_until_cursor_position=" +
+               std::to_string(
+                   defer_mouse_tracking_until_cursor_position_ ? 1 : 0) +
+               " frame=" + std::to_string(frame_count_));
+#endif
 }
 
 void App::InstallPipedInputHandling() {
@@ -800,6 +994,20 @@ void App::RunOnce(Component component) {
   Draw(component);
 
   if (selection_data_previous_ != selection_data_) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("SelectionData changed previous=(" +
+                 std::to_string(selection_data_previous_.start_x) + "," +
+                 std::to_string(selection_data_previous_.start_y) + ")->(" +
+                 std::to_string(selection_data_previous_.end_x) + "," +
+                 std::to_string(selection_data_previous_.end_y) + ") empty=" +
+                 std::to_string(selection_data_previous_.empty ? 1 : 0) +
+                 " current=(" + std::to_string(selection_data_.start_x) +
+                 "," + std::to_string(selection_data_.start_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") empty=" +
+                 std::to_string(selection_data_.empty ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_));
+#endif
     selection_data_previous_ = selection_data_;
     if (selection_on_change_) {
       selection_on_change_();
@@ -820,8 +1028,57 @@ void App::HandleTask(Component component, Task& task) {
     if constexpr (std::is_same_v<T, Event>) {
 
       if (arg.is_cursor_position()) {
-        cursor_x_ = arg.cursor_x();
-        cursor_y_ = arg.cursor_y();
+        const int previous_cursor_x = cursor_x_;
+        const int previous_cursor_y = cursor_y_;
+        const int reported_cursor_x = arg.cursor_x();
+        const int reported_cursor_y = arg.cursor_y();
+        const bool usable_cursor_position =
+            CursorPositionIsUsable(reported_cursor_x, reported_cursor_y);
+#if ACECODE_TUI_INPUT_TRACE
+        AcecodeTrace("CursorPosition raw=(" +
+                     std::to_string(reported_cursor_x) + "," +
+                     std::to_string(reported_cursor_y) + ") previous=(" +
+                     std::to_string(previous_cursor_x) + "," +
+                     std::to_string(previous_cursor_y) + ") usable=" +
+                     std::to_string(usable_cursor_position ? 1 : 0) +
+                     " dim=(" + std::to_string(dimx_) + "," +
+                     std::to_string(dimy_) + ") frame=" +
+                     std::to_string(frame_count_) +
+                     " mouse_tracking_enabled=" +
+                     std::to_string(mouse_tracking_enabled_ ? 1 : 0) +
+                     " defer_until_cursor_position=" +
+                     std::to_string(
+                         defer_mouse_tracking_until_cursor_position_ ? 1 : 0));
+#endif
+        if (!usable_cursor_position) {
+          if (IsTerminalOutputPrimaryScreen()) {
+            defer_mouse_tracking_until_cursor_position_ = true;
+          }
+          frame_valid_ = false;
+          PostAnimationTask();
+#if ACECODE_TUI_INPUT_TRACE
+          AcecodeTrace("CursorPosition rejected unusable raw=(" +
+                       std::to_string(reported_cursor_x) + "," +
+                       std::to_string(reported_cursor_y) +
+                       ") keeping cursor=(" + std::to_string(cursor_x_) +
+                       "," + std::to_string(cursor_y_) + ") frame=" +
+                       std::to_string(frame_count_));
+#endif
+          return;
+        }
+
+        cursor_x_ = reported_cursor_x;
+        cursor_y_ = reported_cursor_y;
+        if (defer_mouse_tracking_until_cursor_position_ && frame_count_ > 0) {
+#if ACECODE_TUI_INPUT_TRACE
+          AcecodeTrace("CursorPosition enabling deferred mouse tracking frame=" +
+                       std::to_string(frame_count_) + " cursor=(" +
+                       std::to_string(cursor_x_) + "," +
+                       std::to_string(cursor_y_) + ")");
+#endif
+          defer_mouse_tracking_until_cursor_position_ = false;
+          EnableMouseTracking(true);
+        }
         return;
       }
 
@@ -830,16 +1087,82 @@ void App::HandleTask(Component component, Task& task) {
         return;
       }
 
+#if ACECODE_TUI_INPUT_TRACE
+      bool trace_mouse = false;
+      Mouse raw_mouse;
+#endif
       if (arg.is_mouse()) {
+#if ACECODE_TUI_INPUT_TRACE
+        raw_mouse = arg.mouse();
+        trace_mouse = TraceMouseEvent(raw_mouse);
+        if (trace_mouse) {
+          AcecodeTrace("Mouse raw " + MouseForTrace(raw_mouse) +
+                       " cursor=(" + std::to_string(cursor_x_) + "," +
+                       std::to_string(cursor_y_) + ") frame=" +
+                       std::to_string(frame_count_) +
+                       " mouse_tracking_enabled=" +
+                       std::to_string(mouse_tracking_enabled_ ? 1 : 0));
+        }
+#endif
+        if (!CursorPositionIsUsable(cursor_x_, cursor_y_)) {
+#if ACECODE_TUI_INPUT_TRACE
+          if (trace_mouse) {
+            AcecodeTrace("Mouse detected unusable cursor origin cursor=(" +
+                         std::to_string(cursor_x_) + "," +
+                         std::to_string(cursor_y_) + ") dim=(" +
+                         std::to_string(dimx_) + "," +
+                         std::to_string(dimy_) +
+                         "), falling back to (1,1) and requesting DSR");
+          }
+#endif
+          cursor_x_ = 1;
+          cursor_y_ = 1;
+          if (IsTerminalOutputPrimaryScreen()) {
+            defer_mouse_tracking_until_cursor_position_ = true;
+          }
+          frame_valid_ = false;
+          PostAnimationTask();
+        }
         arg.mouse().x -= cursor_x_;
         arg.mouse().y -= cursor_y_;
+#if ACECODE_TUI_INPUT_TRACE
+        if (trace_mouse) {
+          AcecodeTrace("Mouse adjusted " + MouseForTrace(arg.mouse()) +
+                       " from_raw=(" + std::to_string(raw_mouse.x) + "," +
+                       std::to_string(raw_mouse.y) + ") cursor=(" +
+                       std::to_string(cursor_x_) + "," +
+                       std::to_string(cursor_y_) + ") frame=" +
+                       std::to_string(frame_count_));
+        }
+#endif
       }
 
       arg.screen_ = this;
 
       bool handled = component->OnEvent(arg);
+#if ACECODE_TUI_INPUT_TRACE
+      if (trace_mouse) {
+        AcecodeTrace("Mouse after component handled=" +
+                     std::to_string(handled ? 1 : 0) + " " +
+                     MouseForTrace(arg.mouse()) + " frame=" +
+                     std::to_string(frame_count_));
+      }
+#endif
 
       handled = HandleSelection(handled, arg);
+#if ACECODE_TUI_INPUT_TRACE
+      if (trace_mouse) {
+        AcecodeTrace("Mouse after selection handled=" +
+                     std::to_string(handled ? 1 : 0) + " empty=" +
+                     std::to_string(selection_data_.empty ? 1 : 0) +
+                     " data=(" + std::to_string(selection_data_.start_x) +
+                     "," + std::to_string(selection_data_.start_y) +
+                     ")->(" + std::to_string(selection_data_.end_x) + "," +
+                     std::to_string(selection_data_.end_y) + ") pending=" +
+                     std::to_string(selection_pending_ ? 1 : 0) +
+                     " frame=" + std::to_string(frame_count_));
+      }
+#endif
 
       if (arg == Event::CtrlC && (!handled || force_handle_ctrl_c_)) {
         RecordSignal(SIGABRT);
@@ -885,6 +1208,20 @@ void App::HandleTask(Component component, Task& task) {
 // private
 bool App::HandleSelection(bool handled, Event event) {
   if (handled) {
+#if ACECODE_TUI_INPUT_TRACE
+    if (event.is_mouse() && TraceMouseEvent(event.mouse())) {
+      AcecodeTrace("HandleSelection clear handled=1 " +
+                   MouseForTrace(event.mouse()) + " previous_empty=" +
+                   std::to_string(selection_data_.empty ? 1 : 0) +
+                   " previous_data=(" +
+                   std::to_string(selection_data_.start_x) + "," +
+                   std::to_string(selection_data_.start_y) + ")->(" +
+                   std::to_string(selection_data_.end_x) + "," +
+                   std::to_string(selection_data_.end_y) + ") pending=" +
+                   std::to_string(selection_pending_ ? 1 : 0) +
+                   " frame=" + std::to_string(frame_count_));
+    }
+#endif
     selection_pending_ = nullptr;
     selection_data_.empty = true;
     selection_ = nullptr;
@@ -901,19 +1238,49 @@ bool App::HandleSelection(bool handled, Event event) {
   }
 
   if (mouse.motion == Mouse::Pressed) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection pressed capture " + MouseForTrace(mouse) +
+                 " previous_empty=" +
+                 std::to_string(selection_data_.empty ? 1 : 0) +
+                 " previous_data=(" +
+                 std::to_string(selection_data_.start_x) + "," +
+                 std::to_string(selection_data_.start_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") frame=" +
+                 std::to_string(frame_count_));
+#endif
     selection_pending_ = CaptureMouse();
     selection_data_.start_x = mouse.x;
     selection_data_.start_y = mouse.y;
     selection_data_.end_x = mouse.x;
     selection_data_.end_y = mouse.y;
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection pressed after data=(" +
+                 std::to_string(selection_data_.start_x) + "," +
+                 std::to_string(selection_data_.start_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") pending=" +
+                 std::to_string(selection_pending_ ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_));
+#endif
     return false;
   }
 
   if (!selection_pending_) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection ignored no_pending " + MouseForTrace(mouse) +
+                 " empty=" + std::to_string(selection_data_.empty ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_));
+#endif
     return false;
   }
 
   if (mouse.motion == Mouse::Moved) {
+#if ACECODE_TUI_INPUT_TRACE
+    const int before_end_x = selection_data_.end_x;
+    const int before_end_y = selection_data_.end_y;
+    const bool before_empty = selection_data_.empty;
+#endif
     if ((mouse.x != selection_data_.end_x) ||
         (mouse.y != selection_data_.end_y)) {
       selection_data_.end_x = mouse.x;
@@ -921,14 +1288,44 @@ bool App::HandleSelection(bool handled, Event event) {
       selection_data_.empty = false;
     }
 
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection moved " + MouseForTrace(mouse) +
+                 " end=(" + std::to_string(before_end_x) + "," +
+                 std::to_string(before_end_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") empty=" +
+                 std::to_string(before_empty ? 1 : 0) + "->" +
+                 std::to_string(selection_data_.empty ? 1 : 0) +
+                 " start=(" + std::to_string(selection_data_.start_x) +
+                 "," + std::to_string(selection_data_.start_y) +
+                 ") frame=" + std::to_string(frame_count_));
+#endif
     return true;
   }
 
   if (mouse.motion == Mouse::Released) {
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection released " + MouseForTrace(mouse) +
+                 " before_data=(" +
+                 std::to_string(selection_data_.start_x) + "," +
+                 std::to_string(selection_data_.start_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") frame=" +
+                 std::to_string(frame_count_));
+#endif
     selection_pending_ = nullptr;
     selection_data_.end_x = mouse.x;
     selection_data_.end_y = mouse.y;
     selection_data_.empty = false;
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("HandleSelection released after data=(" +
+                 std::to_string(selection_data_.start_x) + "," +
+                 std::to_string(selection_data_.start_y) + ")->(" +
+                 std::to_string(selection_data_.end_x) + "," +
+                 std::to_string(selection_data_.end_y) + ") pending=" +
+                 std::to_string(selection_pending_ ? 1 : 0) +
+                 " frame=" + std::to_string(frame_count_));
+#endif
     return true;
   }
 
@@ -996,6 +1393,10 @@ void App::Draw(Component component) {
   // Periodically request the terminal emulator the frame position relative to
   // the screen. This is useful for converting mouse position reported in
   // screen's coordinates to frame's coordinates.
+  const bool cursor_position_needs_refresh =
+      IsTerminalOutputPrimaryScreen() &&
+      (defer_mouse_tracking_until_cursor_position_ ||
+       !CursorPositionIsUsable(cursor_x_, cursor_y_));
 #if defined(FTXUI_MICROSOFT_TERMINAL_FALLBACK)
   // Microsoft's terminal suffers from a [bug]. When reporting the cursor
   // position, several output sequences are mixed together into garbage.
@@ -1006,7 +1407,18 @@ void App::Draw(Component component) {
   static int i = -3;
   ++i;
   if (!use_alternative_screen_ &&
-      (frame_count_ == 0 || i % 150 == 0)) {  // NOLINT
+      (frame_count_ == 0 || previous_frame_resized_ ||
+       cursor_position_needs_refresh || i % 150 == 0)) {  // NOLINT
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("Draw request cursor DSR frame=" +
+                 std::to_string(frame_count_) + " resized=" +
+                 std::to_string(resized ? 1 : 0) + " dim=(" +
+                 std::to_string(dimx_) + "," + std::to_string(dimy_) +
+                 ") cursor=(" + std::to_string(cursor_x_) + "," +
+                 std::to_string(cursor_y_) + ") needs_refresh=" +
+                 std::to_string(cursor_position_needs_refresh ? 1 : 0) +
+                 " microsoft_fallback=1");
+#endif
     TerminalSend(DeviceStatusReport(DSRMode::kCursor));
   }
 #else
@@ -1014,7 +1426,20 @@ void App::Draw(Component component) {
   ++i;
   if (!use_alternative_screen_ &&
       (frame_count_ == 0 || previous_frame_resized_ ||
-       i % 40 == 0)) {  // NOLINT
+       cursor_position_needs_refresh || i % 40 == 0)) {  // NOLINT
+#if ACECODE_TUI_INPUT_TRACE
+    AcecodeTrace("Draw request cursor DSR frame=" +
+                 std::to_string(frame_count_) + " resized=" +
+                 std::to_string(resized ? 1 : 0) +
+                 " previous_frame_resized=" +
+                 std::to_string(previous_frame_resized_ ? 1 : 0) +
+                 " dim=(" + std::to_string(dimx_) + "," +
+                 std::to_string(dimy_) + ") cursor=(" +
+                 std::to_string(cursor_x_) + "," +
+                 std::to_string(cursor_y_) + ") needs_refresh=" +
+                 std::to_string(cursor_position_needs_refresh ? 1 : 0) +
+                 " microsoft_fallback=0");
+#endif
     TerminalSend(DeviceStatusReport(DSRMode::kCursor));
   }
 #endif
