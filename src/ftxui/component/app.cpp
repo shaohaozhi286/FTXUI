@@ -560,7 +560,32 @@ void App::Install() {
 
   // After uninstalling the new configuration, flush it to the terminal to
   // ensure it is fully applied:
-  on_exit_functions.emplace([this] { TerminalFlush(); });
+  on_exit_functions.emplace([this] {
+#if defined(_WIN32)
+    // Windows console modes are restored by other on-exit callbacks before
+    // this final flush runs. In legacy cmd.exe that disables VT processing,
+    // so any buffered cleanup sequences would be printed as raw ESC text.
+    // Temporarily re-enable VT for the flush, then put the mode back.
+    auto stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD out_mode = 0;
+    const bool restore_mode =
+        stdout_handle != INVALID_HANDLE_VALUE &&
+        GetConsoleMode(stdout_handle, &out_mode);
+    if (restore_mode) {
+      constexpr DWORD enable_virtual_terminal_processing = 0x0004;
+      constexpr DWORD disable_newline_auto_return = 0x0008;
+      SetConsoleMode(stdout_handle,
+                     out_mode | enable_virtual_terminal_processing |
+                         disable_newline_auto_return);
+    }
+    TerminalFlush();
+    if (restore_mode) {
+      SetConsoleMode(stdout_handle, out_mode);
+    }
+#else
+    TerminalFlush();
+#endif
+  });
 
   // Request the terminal to report the current cursor shape. We will restore it
   // on exit.
