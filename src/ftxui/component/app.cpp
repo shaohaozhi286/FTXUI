@@ -1005,14 +1005,16 @@ void App::Draw(Component component) {
   // https://github.com/ArthurSonzogni/FTXUI/issues/136
   static int i = -3;
   ++i;
-  if (!use_alternative_screen_ && (i % 150 == 0)) {  // NOLINT
+  if (!use_alternative_screen_ &&
+      (frame_count_ == 0 || i % 150 == 0)) {  // NOLINT
     TerminalSend(DeviceStatusReport(DSRMode::kCursor));
   }
 #else
   static int i = -3;
   ++i;
   if (!use_alternative_screen_ &&
-      (previous_frame_resized_ || i % 40 == 0)) {  // NOLINT
+      (frame_count_ == 0 || previous_frame_resized_ ||
+       i % 40 == 0)) {  // NOLINT
     TerminalSend(DeviceStatusReport(DSRMode::kCursor));
   }
 #endif
