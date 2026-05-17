@@ -9,6 +9,7 @@
 #include <csignal>  // for signal, SIGTSTP, SIGABRT, SIGWINCH, raise, SIGFPE, SIGILL, SIGINT, SIGSEGV, SIGTERM, __sighandler_t, size_t
 #include <cstdint>
 #include <cstdio>                    // for fileno, stdin
+#include <cstdlib>                   // for getenv
 #include <fstream>
 #include <ftxui/component/task.hpp>  // for Task, Closure, AnimationTask
 #include <ftxui/screen/screen.hpp>  // for Cell, Screen::Cursor, Screen, Screen::Cursor::Hidden
@@ -1365,22 +1366,35 @@ void App::Draw(Component component) {
       break;
   }
 
+  const char* full_repaint_env = std::getenv("ACECODE_FTXUI_FULL_REPAINT");
+  const bool force_full_repaint =
+      full_repaint_env != nullptr && full_repaint_env[0] != '\0' &&
+      !(full_repaint_env[0] == '0' && full_repaint_env[1] == '\0');
+
   // Hide cursor to prevent flickering during reset.
   TerminalSend("\033[?25l");
 
   const bool resized = frame_count_ == 0 || (dimx != dimx_) || (dimy != dimy_);
-  TerminalSend(ResetCursorPosition());
+  if (force_full_repaint) {
+    // ACECODE-PATCH(conhost): old Windows Console Host can lose track of the
+    // relative cursor origin after wraps/cursor-position reports. For the
+    // compatibility layout, repaint from an absolute home position every frame.
+    reset_cursor_position_.clear();
+    TerminalSend("\033[H\033[2J");
+  } else {
+    TerminalSend(ResetCursorPosition());
 
-  if (frame_count_ != 0) {
-    // Reset the cursor position to the lower left corner to start drawing the
-    // new frame. 
-    ResetPosition(internal_->output_buffer, resized);
+    if (frame_count_ != 0) {
+      // Reset the cursor position to the lower left corner to start drawing the
+      // new frame. 
+      ResetPosition(internal_->output_buffer, resized);
 
-    // If the terminal width decrease, the terminal emulator will start wrapping
-    // lines and make the display dirty. We should clear it completely.
-    if ((dimx < dimx_) && !use_alternative_screen_) {
-      TerminalSend("\033[J");  // clear terminal output
-      TerminalSend("\033[H");  // move cursor to home position
+      // If the terminal width decrease, the terminal emulator will start wrapping
+      // lines and make the display dirty. We should clear it completely.
+      if ((dimx < dimx_) && !use_alternative_screen_) {
+        TerminalSend("\033[J");  // clear terminal output
+        TerminalSend("\033[H");  // move cursor to home position
+      }
     }
   }
 
