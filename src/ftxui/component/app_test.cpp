@@ -202,7 +202,7 @@ TEST(App, FixedSizeInitialFrame) {
       "\x1BP$q q\x1B\\"  // Request cursor shape.
       "\x1B[?7l"         // Disable line wrapping.
       "\x1B[?1000h"      // Enable mouse tracking.
-      "\x1B[?1003h"      // Enable mouse motion tracking.
+      "\x1B[?1002h"      // Enable button-event mouse tracking.
       "\x1B[?1015h"      // Enable mouse wheel tracking.
       "\x1B[?1006h"      // Enable SGR mouse tracking.
       "\0"               // Flush stdout.
@@ -224,7 +224,7 @@ TEST(App, FixedSizeInitialFrame) {
       "\x1B[1C"      // Move cursor right one character.
       "\x1B[?1006l"  // Disable SGR mouse tracking.
       "\x1B[?1015l"  // Disable mouse wheel tracking.
-      "\x1B[?1003l"  // Disable mouse motion tracking.
+      "\x1B[?1002l"  // Disable button-event mouse tracking.
       "\x1B[?1000l"  // Disable mouse tracking.
       "\x1B[?7h"     // Enable line wrapping.
       "\x1B[?25h"    // Show cursor.

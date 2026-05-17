@@ -462,7 +462,10 @@ void App::EnableMouseTracking(bool flush) {
                std::to_string(cursor_y_) + ")");
 #endif
   TerminalSend(Set({DECMode::kMouseVt200}));
-  TerminalSend(Set({DECMode::kMouseAnyEvent}));
+  // ACECODE-PATCH(idle-mouse-redraw): use button-event tracking instead of
+  // any-event tracking. Passive hover motion should not generate events, but
+  // clicks, wheel events, and button-held drags still need to be reported.
+  TerminalSend(Set({DECMode::kMouseBtnEventMouse}));
   TerminalSend(Set({DECMode::kMouseUrxvtMode}));
   TerminalSend(Set({DECMode::kMouseSgrExtMode}));
   if (flush) {
@@ -871,7 +874,7 @@ void App::Install() {
     on_exit_functions.emplace(
         [this] { TerminalSend(Reset({DECMode::kMouseVt200})); });
     on_exit_functions.emplace(
-        [this] { TerminalSend(Reset({DECMode::kMouseAnyEvent})); });
+        [this] { TerminalSend(Reset({DECMode::kMouseBtnEventMouse})); });
     on_exit_functions.emplace(
         [this] { TerminalSend(Reset({DECMode::kMouseUrxvtMode})); });
     on_exit_functions.emplace(
