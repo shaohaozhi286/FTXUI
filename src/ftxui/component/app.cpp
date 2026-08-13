@@ -104,6 +104,7 @@ struct App::Internal {
   const bool use_alternative_screen_;
 
   bool track_mouse_ = true;
+  bool kitty_keyboard_enabled_ = false;
   bool mouse_tracking_enabled_ = false;
   bool defer_mouse_tracking_until_cursor_position_ = false;
 
@@ -853,6 +854,18 @@ void App::Internal::Install() {
     enable({
         DECMode::kAlternateScreen,
     });
+  }
+
+  if (kitty_keyboard_enabled_) {
+    // ACECODE-PATCH(kitty-keyboard): keep the terminal's screen-local keyboard
+    // mode stack balanced across normal, alternate-screen, and restored-I/O
+    // App lifecycles.
+    // Push only the disambiguate-escape-codes flag. Reporting all keys or
+    // alternate key identities would change ordinary text input semantics.
+    TerminalSend("\x1B[>1u");
+    // The cleanup stack is LIFO. Because this is registered after entering the
+    // alternate screen, the keyboard mode is popped before that screen exits.
+    on_exit_functions.emplace([this] { TerminalSend("\x1B[<u"); });
   }
 
   disable({
@@ -1762,9 +1775,10 @@ size_t App::Internal::FetchTerminalEvents() {
   auto records = get_input_records();
   if (records.size() == 0) {
     const auto timeout = std::chrono::steady_clock::now() - last_char_time;
-    const size_t timeout_microseconds =
-        std::chrono::duration_cast<std::chrono::microseconds>(timeout).count();
-    terminal_input_parser.Timeout(timeout_microseconds);
+    // ACECODE-PATCH(kitty-keyboard): Timeout() and the POSIX path use ms.
+    const size_t timeout_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count();
+    terminal_input_parser.Timeout(static_cast<int>(timeout_ms));
     return 0;
   }
   last_char_time = std::chrono::steady_clock::now();
@@ -1810,9 +1824,10 @@ size_t App::Internal::FetchTerminalEvents() {
   const ssize_t l = read(STDIN_FILENO, out.data(), out.size());
   if (l <= 0) {
     const auto timeout = std::chrono::steady_clock::now() - last_char_time;
-    const size_t timeout_microseconds =
-        std::chrono::duration_cast<std::chrono::microseconds>(timeout).count();
-    terminal_input_parser.Timeout(timeout_microseconds);
+    // ACECODE-PATCH(kitty-keyboard): Timeout() and the POSIX path use ms.
+    const size_t timeout_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count();
+    terminal_input_parser.Timeout(static_cast<int>(timeout_ms));
     return 0;
   }
   last_char_time = std::chrono::steady_clock::now();
@@ -1927,6 +1942,10 @@ App App::TerminalOutput() {
 
 void App::TrackMouse(bool enable) {
   internal_->track_mouse_ = enable;
+}
+
+void App::EnableKittyKeyboard(bool enable) {
+  internal_->kitty_keyboard_enabled_ = enable;
 }
 
 void App::HandlePipedInput(bool enable) {

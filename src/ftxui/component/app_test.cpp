@@ -5,6 +5,9 @@
 #include <chrono>  // for steady_clock, seconds
 #include <csignal>  // for raise, SIGABRT, SIGFPE, SIGILL, SIGINT, SIGSEGV, SIGTERM
 #include <ftxui/component/event.hpp>  // for Event, Event::Custom
+#include <iostream>                   // for cout
+#include <sstream>                    // for ostringstream
+#include <string>                     // for string
 #include <thread>                     // for thread
 #include <tuple>                      // for _Swallow_assign, ignore
 
@@ -24,6 +27,37 @@
 namespace ftxui {
 
 namespace {
+class CoutCapture {
+ public:
+  CoutCapture() : previous_(std::cout.rdbuf(output_.rdbuf())) {}
+  ~CoutCapture() {
+    std::cout.flush();
+    std::cout.rdbuf(previous_);
+  }
+
+  CoutCapture(const CoutCapture&) = delete;
+  CoutCapture& operator=(const CoutCapture&) = delete;
+
+  std::string Get() {
+    std::cout.flush();
+    return output_.str();
+  }
+
+ private:
+  std::ostringstream output_;
+  std::streambuf* previous_;
+};
+
+size_t CountOccurrences(std::string_view value, std::string_view needle) {
+  size_t count = 0;
+  size_t position = 0;
+  while ((position = value.find(needle, position)) != std::string_view::npos) {
+    ++count;
+    position += needle.size();
+  }
+  return count;
+}
+
 #if defined(__unix__)
 
 // Capture the standard output (stdout) to a string.
@@ -281,6 +315,114 @@ TEST(App, FixedSizeInitialFrame) {
   expected += "\r\n"s;
   ASSERT_EQ(expected, output);
 #endif
+}
+
+TEST(App, KittyKeyboardDisabledByDefault) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FixedSize(2, 1);
+    screen.TrackMouse(false);
+    auto component = Renderer([&] { return text("AB"); });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  EXPECT_EQ(output.find("\x1B[>1u"), std::string::npos);
+  EXPECT_EQ(output.find("\x1B[<u"), std::string::npos);
+}
+
+TEST(App, KittyKeyboardPrimaryScreenPushPop) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FixedSize(2, 1);
+    screen.TrackMouse(false);
+    screen.EnableKittyKeyboard();
+    auto component = Renderer([&] { return text("AB"); });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  const size_t push = output.find("\x1B[>1u");
+  const size_t pop = output.find("\x1B[<u");
+  ASSERT_NE(push, std::string::npos);
+  ASSERT_NE(pop, std::string::npos);
+  EXPECT_LT(push, pop);
+  EXPECT_EQ(CountOccurrences(output, "\x1B[>1u"), 1U);
+  EXPECT_EQ(CountOccurrences(output, "\x1B[<u"), 1U);
+}
+
+TEST(App, KittyKeyboardAlternateScreenOrdering) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FullscreenAlternateScreen();
+    screen.TrackMouse(false);
+    screen.EnableKittyKeyboard();
+    auto component = Renderer([&] { return text("AB"); });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  const size_t enter_screen = output.find("\x1B[?1049h");
+  const size_t push_keyboard = output.find("\x1B[>1u");
+  const size_t pop_keyboard = output.find("\x1B[<u");
+  const size_t leave_screen = output.find("\x1B[?1049l");
+  ASSERT_NE(enter_screen, std::string::npos);
+  ASSERT_NE(push_keyboard, std::string::npos);
+  ASSERT_NE(pop_keyboard, std::string::npos);
+  ASSERT_NE(leave_screen, std::string::npos);
+  EXPECT_LT(enter_screen, push_keyboard);
+  EXPECT_LT(push_keyboard, pop_keyboard);
+  EXPECT_LT(pop_keyboard, leave_screen);
+}
+
+TEST(App, KittyKeyboardWithRestoredIOIsBalanced) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FixedSize(2, 1);
+    screen.TrackMouse(false);
+    screen.EnableKittyKeyboard();
+    bool restored = false;
+    auto restore_io = screen.WithRestoredIO([] {});
+    auto component = Renderer([&] {
+      if (!restored) {
+        restored = true;
+        restore_io();
+      }
+      return text("AB");
+    });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  EXPECT_EQ(CountOccurrences(output, "\x1B[>1u"), 2U);
+  EXPECT_EQ(CountOccurrences(output, "\x1B[<u"), 2U);
+  const size_t push_1 = output.find("\x1B[>1u");
+  const size_t pop_1 = output.find("\x1B[<u", push_1 + 1);
+  const size_t push_2 = output.find("\x1B[>1u", pop_1 + 1);
+  const size_t pop_2 = output.find("\x1B[<u", push_2 + 1);
+  ASSERT_NE(push_1, std::string::npos);
+  ASSERT_NE(pop_1, std::string::npos);
+  ASSERT_NE(push_2, std::string::npos);
+  ASSERT_NE(pop_2, std::string::npos);
+  EXPECT_LT(push_1, pop_1);
+  EXPECT_LT(pop_1, push_2);
+  EXPECT_LT(push_2, pop_2);
 }
 
 TEST(App, MoveConstructor) {

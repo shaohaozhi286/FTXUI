@@ -80,6 +80,13 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   /// @note This must be called before calling `App::Loop`.
   void TrackMouse(bool enable = true);
 
+  /// @brief Enable or disable the Kitty keyboard protocol.
+  /// @param enable Whether to request unambiguous escape-code reporting.
+  /// @note This option is disabled by default.
+  /// @note This must be called before calling `App::Loop`.
+  // ACECODE-PATCH(kitty-keyboard): opt-in lifecycle support for CSI > 1 u.
+  void EnableKittyKeyboard(bool enable = true);
+
   /// @brief Enable or disable automatic piped input handling.
   /// When enabled, FTXUI will detect piped input and redirect stdin from
   /// /dev/tty for keyboard input, allowing applications to read piped data

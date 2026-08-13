@@ -83,6 +83,22 @@ TEST(Event, EscapeFast) {
   EXPECT_EQ(received_events[1], Event::AltB);
 }
 
+TEST(Event, KittyKeyboardSequenceIsBufferedUntilTerminator) {
+  std::vector<Event> received_events;
+  auto parser = TerminalInputParser(
+      [&](Event event) { received_events.push_back(std::move(event)); });
+  const std::string input = "\x1B[97;5u";
+  for (size_t index = 0; index < input.size(); ++index) {
+    parser.Add(input[index]);
+    if (index + 1 < input.size()) {
+      EXPECT_TRUE(received_events.empty());
+    }
+  }
+
+  ASSERT_EQ(received_events.size(), 1U);
+  EXPECT_EQ(received_events[0], Event::Special(input));
+}
+
 TEST(Event, MouseLeftClickPressed) {
   std::vector<Event> received_events;
   auto parser = TerminalInputParser(
