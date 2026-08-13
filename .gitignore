@@ -11,6 +11,7 @@ out/
 !.clang-format
 !.clang-tidy
 !.gitignore
+!ACECODE_PATCHES.md
 !CHANGELOG.md
 !CMakeLists.txt
 !conanfile.py
