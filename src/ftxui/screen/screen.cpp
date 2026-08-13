@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <iostream>  // for cout, flush
 #include <limits>
-#include <map>      // for _Rb_tree_const_iterator, map, operator!=, operator==
-#include <utility>  // for pair
+#include <map>     // for _Rb_tree_const_iterator, map, operator!=, operator==
+#include <string>  // for string
+#include <string_view>  // for string_view
+#include <utility>      // for pair
 
 #include "ftxui/screen/cell.hpp"  // for Cell
 #include "ftxui/screen/screen.hpp"
@@ -55,7 +57,12 @@ void WindowsEmulateVT100Terminal() {
   auto stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
 
   DWORD out_mode = 0;
-  GetConsoleMode(stdout_handle, &out_mode);
+  if (!GetConsoleMode(stdout_handle, &out_mode)) {
+    // The output is not a console (e.g. redirected to a file or a pipe). Keep
+    // the detected color support and let the consumer of the stream interpret
+    // the escape sequences.
+    return;
+  }
 
   // https://docs.microsoft.com/en-us/windows/console/setconsolemode
   const int enable_virtual_terminal_processing = 0x0004;
@@ -305,7 +312,7 @@ const std::map<std::string, TileEncoding> tile_encoding = { // NOLINT
 // clang-format on
 
 template <class A, class B>
-std::map<B, A> InvertMap(const std::map<A, B> input) {
+std::map<B, A> InvertMap(const std::map<A, B>& input) {
   std::map<B, A> output;
   for (const auto& it : input) {
     output[it.second] = it.first;
@@ -448,20 +455,25 @@ void Screen::ToString(std::string& ss) const {
 
     // After printing a fullwith character, we need to skip the next cell.
     bool previous_fullwidth = false;
-    for (const auto& cell : cells_[y]) {
-      if (!previous_fullwidth) {
-        UpdateCellStyle(this, ss, *previous_cell_ref, cell);
-        previous_cell_ref = &cell;
-        if (cell.character.empty()) {
-          ss += ' ';
-        } else {
-          ss += cell.character;
+    if (dimx_ > 0) {
+      const Cell* line_start = &FastCellAt(0, y);
+      const Cell* line_end = line_start + dimx_;
+      for (const Cell* it = line_start; it != line_end; ++it) {
+        const auto& cell = *it;
+        if (!previous_fullwidth) {
+          UpdateCellStyle(this, ss, *previous_cell_ref, cell);
+          previous_cell_ref = &cell;
+          if (cell.character.empty()) {
+            ss += ' ';
+          } else {
+            ss += cell.character;
+          }
         }
-      }
-      if (cell.character.size() <= 1) {
-        previous_fullwidth = false;
-      } else {
-        previous_fullwidth = (string_width(cell.character) == 2);
+        if (cell.character.size() <= 1) {
+          previous_fullwidth = false;
+        } else {
+          previous_fullwidth = (string_width(cell.character) == 2);
+        }
       }
     }
   }
@@ -507,6 +519,9 @@ std::string Screen::ResetPosition(bool clear) const {
 /// @param clear Whether to clear the screen or not.
 void Screen::ResetPosition(std::string& ss, bool clear) const {
   if (clear) {
+    // The clear branch must move up one row at a time, because each row needs
+    // its own CLEAR_LINE (\x1B[2K) erase. It cannot be collapsed into a single
+    // parameterized cursor-up.
     ss += '\r';       // MOVE_LEFT;
     ss += "\x1b[2K";  // CLEAR_SCREEN;
     for (int y = 1; y < dimy_; ++y) {
@@ -514,9 +529,12 @@ void Screen::ResetPosition(std::string& ss, bool clear) const {
       ss += "\x1B[2K";  // CLEAR_LINE;
     }
   } else {
+    // The non-clear branch only needs to reposition the cursor at the top-left,
+    // so the per-row walk-up is collapsed into a single parameterized
+    // CSI cursor-up (\x1B[<n>A), emitting far fewer bytes per frame.
     ss += '\r';  // MOVE_LEFT;
-    for (int y = 1; y < dimy_; ++y) {
-      ss += "\x1B[1A";  // MOVE_UP;
+    if (dimy_ > 1) {
+      ss += "\x1B[" + std::to_string(dimy_ - 1) + "A";  // MOVE_UP;
     }
   }
 }
@@ -535,23 +553,23 @@ void Screen::Clear() {
 
 // clang-format off
 void Screen::ApplyShader() {
-  // Merge box characters togethers.
+  // Merge box characters together.
   for (int y = 0; y < dimy_; ++y) {
     for (int x = 0; x < dimx_; ++x) {
       // Box drawing character uses exactly 3 byte.
-      Cell& cur = cells_[y][x];
+      Cell& cur = FastCellAt(x, y);
       if (!ShouldAttemptAutoMerge(cur)) {
         continue;
       }
 
       if (x > 0) {
-        Cell& left = cells_[y][x-1];
+        Cell& left = FastCellAt(x - 1, y);
         if (ShouldAttemptAutoMerge(left)) {
           UpgradeLeftRight(left.character, cur.character);
         }
       }
       if (y > 0) {
-        Cell& top = cells_[y-1][x];
+        Cell& top = FastCellAt(x, y - 1);
         if (ShouldAttemptAutoMerge(top)) {
           UpgradeTopDown(top.character, cur.character);
         }
@@ -570,7 +588,7 @@ std::uint8_t Screen::RegisterHyperlink(std::string_view link) {
   if (hyperlinks_.size() == std::numeric_limits<std::uint8_t>::max()) {
     return 0;
   }
-  hyperlinks_.push_back(std::string(link));
+  hyperlinks_.emplace_back(link);
   return hyperlinks_.size() - 1;
 }
 
@@ -592,5 +610,14 @@ const Screen::SelectionStyle& Screen::GetSelectionStyle() const {
 void Screen::SetSelectionStyle(SelectionStyle decorator) {
   selection_style_ = std::move(decorator);
 }
+
+void Screen::Reserved1() {}
+void Screen::Reserved2() {}
+void Screen::Reserved3() {}
+void Screen::Reserved4() {}
+void Screen::Reserved5() {}
+void Screen::Reserved6() {}
+void Screen::Reserved7() {}
+void Screen::Reserved8() {}
 
 }  // namespace ftxui

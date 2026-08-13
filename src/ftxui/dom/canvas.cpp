@@ -3,6 +3,12 @@
 // the LICENSE file.
 #include "ftxui/dom/canvas.hpp"
 
+// On Windows, DrawText is a macro defined in windows.h. This conflicts with our
+// Canvas::DrawText method when building as a single translation unit.
+#ifdef DrawText
+#undef DrawText
+#endif
+
 #include <algorithm>               // for max, min
 #include <cmath>                   // for abs
 #include <cstdint>                 // for uint8_t
@@ -88,9 +94,10 @@ constexpr auto nostyle = [](Cell& /*pixel*/) {};
 /// @param width the width of the canvas. A cell is a 2x4 braille dot.
 /// @param height the height of the canvas. A cell is a 2x4 braille dot.
 Canvas::Canvas(int width, int height)
-    : width_(width),
-      height_(height),
-      storage_(width_ * height_ / 8 /* NOLINT */) {}
+    : width_(std::max(0, width)),
+      height_(std::max(0, height)),
+      storage_(static_cast<size_t>(width_) * static_cast<size_t>(height_) /
+               8 /* NOLINT */) {}
 
 /// @brief Get the content of a cell.
 /// @param x the x coordinate of the cell.
@@ -857,6 +864,8 @@ void Canvas::DrawSurface(int x, int y, const Surface& image) {
 }
 
 /// @brief Modify a pixel at a given location.
+/// @param x The x-coordinate of the pixel.
+/// @param y The y-coordinate of the pixel.
 /// @param style a function that modifies the pixel.
 void Canvas::Style(int x, int y, const Stylizer& style) {
   if (IsIn(x, y)) {
@@ -889,6 +898,10 @@ class CanvasNodeBase : public Node {
 /// @brief Produce an element from a Canvas, or a reference to a Canvas.
 // NOLINTNEXTLINE
 Element canvas(ConstRef<Canvas> canvas) {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
   class Impl : public CanvasNodeBase {
    public:
     explicit Impl(ConstRef<Canvas> canvas) : canvas_(std::move(canvas)) {
@@ -899,6 +912,9 @@ Element canvas(ConstRef<Canvas> canvas) {
     ConstRef<Canvas> canvas_;
   };
   return std::make_shared<Impl>(canvas);
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 }
 
 /// @brief Produce an element drawing a canvas of requested size.

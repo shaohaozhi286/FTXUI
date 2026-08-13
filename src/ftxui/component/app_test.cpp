@@ -2,20 +2,22 @@
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 #include <gtest/gtest.h>  // for Test, TestInfo (ptr only), TEST, EXPECT_EQ, Message, TestPartResult
+#include <chrono>  // for steady_clock, seconds
 #include <csignal>  // for raise, SIGABRT, SIGFPE, SIGILL, SIGINT, SIGSEGV, SIGTERM
 #include <ftxui/component/event.hpp>  // for Event, Event::Custom
+#include <thread>                     // for thread
 #include <tuple>                      // for _Swallow_assign, ignore
 
 #include "ftxui/component/app.hpp"
 #include "ftxui/component/component.hpp"  // for Renderer
-#include "ftxui/dom/elements.hpp"         // for text, Element
+#include "ftxui/component/loop.hpp"
+#include "ftxui/dom/elements.hpp"  // for text, Element
 
 #if defined(__unix__)
 #include <fcntl.h>
 #include <unistd.h>
 #include <array>
 #include <cstdio>
-#include <ftxui/component/loop.hpp>
 #include <string>
 #endif
 
@@ -62,7 +64,18 @@ class StdCapture {
 
 #endif
 
+static bool g_test_signal_called = false;
+void TestSignalHandler(int) {
+  g_test_signal_called = true;
+  if (App::Active()) {
+    App::Active()->Exit();
+  }
+}
+
 bool TestSignal(int signal) {
+  g_test_signal_called = false;
+  auto old_handler = std::signal(signal, TestSignalHandler);
+
   int called = 0;
   // The tree of components. This defines how to navigate using the keyboard.
   auto component = Renderer([&] {
@@ -75,7 +88,10 @@ bool TestSignal(int signal) {
   auto screen = App::FitComponent();
   screen.Loop(component);
 
-  EXPECT_EQ(called, 2);
+  std::signal(signal, old_handler);
+
+  EXPECT_TRUE(g_test_signal_called);
+  EXPECT_GE(called, 2);
   return true;
 }
 }  // namespace
@@ -98,6 +114,20 @@ TEST(App, Signal_SIGABRT) {
 TEST(App, Signal_SIGFPE) {
   TestSignal(SIGFPE);
 }
+#if !defined(_WIN32)
+TEST(App, Signal_SIGBUS) {
+  TestSignal(SIGBUS);
+}
+TEST(App, Signal_SIGSYS) {
+  TestSignal(SIGSYS);
+}
+TEST(App, Signal_SIGQUIT) {
+  TestSignal(SIGQUIT);
+}
+TEST(App, Signal_SIGHUP) {
+  TestSignal(SIGHUP);
+}
+#endif
 
 // Regression test for:
 // https://github.com/ArthurSonzogni/FTXUI/issues/402
@@ -114,6 +144,9 @@ TEST(App, PostTaskToNonActive) {
 }
 
 TEST(App, CtrlC) {
+  auto old_handler = std::signal(SIGINT, [](int) {});
+  auto old_abrt_handler = std::signal(SIGABRT, [](int) {});
+
   auto screen = App::FitComponent();
   bool called = false;
   auto component = Renderer([&] {
@@ -124,9 +157,15 @@ TEST(App, CtrlC) {
     return text("");
   });
   screen.Loop(component);
+
+  std::signal(SIGINT, old_handler);
+  std::signal(SIGABRT, old_abrt_handler);
 }
 
 TEST(App, CtrlC_Forced) {
+  auto old_handler = std::signal(SIGINT, [](int) {});
+  auto old_abrt_handler = std::signal(SIGABRT, [](int) {});
+
   auto screen = App::FitComponent();
   screen.ForceHandleCtrlC(true);
   auto component = Renderer([&] {
@@ -151,9 +190,15 @@ TEST(App, CtrlC_Forced) {
   screen.Loop(component);
 
   ASSERT_LE(ctrl_c_count, 50);
+
+  std::signal(SIGINT, old_handler);
+  std::signal(SIGABRT, old_abrt_handler);
 }
 
 TEST(App, CtrlC_NotForced) {
+  auto old_handler = std::signal(SIGINT, [](int) {});
+  auto old_abrt_handler = std::signal(SIGABRT, [](int) {});
+
   auto screen = App::FitComponent();
   screen.ForceHandleCtrlC(false);
   auto component = Renderer([&] {
@@ -178,6 +223,9 @@ TEST(App, CtrlC_NotForced) {
   screen.Loop(component);
 
   ASSERT_GE(ctrl_c_count, 50);
+
+  std::signal(SIGINT, old_handler);
+  std::signal(SIGABRT, old_abrt_handler);
 }
 
 // Regression test for:
@@ -194,47 +242,106 @@ TEST(App, FixedSizeInitialFrame) {
     Loop loop(&screen, component);
     loop.RunOnce();
   }
-  using namespace std::string_view_literals;
+  using namespace std::string_literals;
 
-  auto expected =
-      // Install the App.
-      "\0"               // Flush stdout.
-      "\x1BP$q q\x1B\\"  // Request cursor shape.
-      "\x1B[?7l"         // Disable line wrapping.
-      "\x1B[?1000h"      // Enable mouse tracking.
-      "\x1B[?1002h"      // Enable button-event mouse tracking.
-      "\x1B[?1015h"      // Enable mouse wheel tracking.
-      "\x1B[?1006h"      // Enable SGR mouse tracking.
-      "\0"               // Flush stdout.
+  std::string expected;
+  // Install the App.
+  expected += "\0"s;           // Flush stdout.
+  expected += "\x1B[?7l"s;     // Disable line wrapping.
+  expected += "\x1B[?1000h"s;  // Enable mouse tracking.
+  expected += "\x1B[?1002h"s;  // Enable button-event mouse tracking.
+  expected += "\x1B[?1015h"s;  // Enable mouse wheel tracking.
+  expected += "\x1B[?1006h"s;  // Enable SGR mouse tracking.
+  expected += "\0"s;           // Flush stdout.
 
-      // Reset the screen.
-      "\x1B[?25l"  // Hide cursor.
+  // Reset the screen.
+  expected += "\x1B[?25l"s;  // Hide cursor.
 
-      // Print the document.
-      "AB\r\n"  // Print "AB" and move to the next line.
-      "  "      // Print two spaces to fill the line.
+  // Print the document.
+  expected += "AB\r\n"s;  // Print "AB" and move to the next line.
+  expected += "  "s;      // Print two spaces to fill the line.
 
-      // Set cursor position.
-      "\x1B[1D"  // Move cursor left one character.
+  // Set cursor position.
+  expected += "\x1B[1D"s;  // Move cursor left one character.
 
-      // Flush
-      "\0"  // Flush stdout.
+  // Flush
+  expected += "\0"s;  // Flush stdout.
 
-      // Uninstall the App.
-      "\x1B[1C"      // Move cursor right one character.
-      "\x1B[?1006l"  // Disable SGR mouse tracking.
-      "\x1B[?1015l"  // Disable mouse wheel tracking.
-      "\x1B[?1002l"  // Disable button-event mouse tracking.
-      "\x1B[?1000l"  // Disable mouse tracking.
-      "\x1B[?7h"     // Enable line wrapping.
-      "\x1B[?25h"    // Show cursor.
-      "\x1B[1 q"     // Set cursor shape to 1 (block).
-      "\0"           // Flush stdout.
+  // Uninstall the App.
+  expected += "\x1B[1C"s;      // Move cursor right one character.
+  expected += "\x1B[?25h"s;    // Show cursor.
+  expected += "\x1B[?1006l"s;  // Disable SGR mouse tracking.
+  expected += "\x1B[?1015l"s;  // Disable mouse wheel tracking.
+  expected += "\x1B[?1002l"s;  // Disable button-event mouse tracking.
+  expected += "\x1B[?1000l"s;  // Disable mouse tracking.
+  expected += "\x1B[?7h"s;     // Enable line wrapping.
+  expected += "\0"s;           // Flush stdout.
 
-      // Skip one line to avoid the prompt to be printed over the last drawing.
-      "\r\n"sv;
+  // Skip one line to avoid the prompt to be printed over the last drawing.
+  expected += "\r\n"s;
   ASSERT_EQ(expected, output);
 #endif
+}
+
+TEST(App, MoveConstructor) {
+  auto screen = App::FixedSize(10, 10);
+  App screen2 = std::move(screen);
+
+  int called = 0;
+  auto component = Renderer([&] {
+    called++;
+    return text("Hello");
+  });
+
+  Loop loop(&screen2, component);
+  loop.RunOnce();
+  EXPECT_EQ(called, 1);
+}
+
+// PostEvent is documented as thread safe. Posting from another thread while
+// the main loop runs must deliver every event, without data races.
+TEST(App, PostEventFromAnotherThread) {
+  int received = 0;
+  auto component =
+      CatchEvent(Renderer([] { return text(""); }), [&](const Event& event) {
+        if (event == Event::Custom) {
+          received++;
+        }
+        return true;
+      });
+  auto screen = App::FixedSize(10, 1);
+  Loop loop(&screen, component);
+
+  constexpr int kCount = 10000;
+  std::thread poster([&] {
+    for (int i = 0; i < kCount; ++i) {
+      screen.PostEvent(Event::Custom);
+    }
+  });
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (received < kCount && std::chrono::steady_clock::now() < deadline) {
+    loop.RunOnce();
+  }
+  poster.join();
+  EXPECT_EQ(received, kCount);
+}
+
+TEST(App, MoveAssignment) {
+  auto screen = App::FixedSize(10, 10);
+  auto screen2 = App::FixedSize(5, 5);
+  screen2 = std::move(screen);
+
+  int called = 0;
+  auto component = Renderer([&] {
+    called++;
+    return text("Hello");
+  });
+
+  Loop loop(&screen2, component);
+  loop.RunOnce();
+  EXPECT_EQ(called, 1);
 }
 
 }  // namespace ftxui

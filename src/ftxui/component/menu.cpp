@@ -73,17 +73,9 @@ class MenuBase : public ComponentBase, public MenuOption {
   }
 
   bool IsHorizontal() { return ftxui::IsHorizontal(direction); }
-  void OnChange() {
-    if (on_change) {
-      on_change();
-    }
-  }
+  void OnChange() { App::PostEventOrExecute(on_change); }
 
-  void OnEnter() {
-    if (on_enter) {
-      on_enter();
-    }
-  }
+  void OnEnter() { App::PostEventOrExecute(on_enter); }
 
   void Clamp() {
     if (selected() != selected_previous_) {
@@ -143,7 +135,7 @@ class MenuBase : public ComponentBase, public MenuOption {
     }
 
     if (IsInverted(direction)) {
-      std::reverse(elements.begin(), elements.end());
+      std::reverse(elements.begin(), elements.end());  // NOLINT
     }
 
     const Element bar =
@@ -482,7 +474,7 @@ class MenuBase : public ComponentBase, public MenuOption {
 };
 
 /// @brief A list of text. The focused element is selected.
-/// @param option a structure containing all the paramters.
+/// @param option a structure containing all the parameters.
 /// @ingroup component
 ///
 /// ### Example

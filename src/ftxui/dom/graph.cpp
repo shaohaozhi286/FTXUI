@@ -1,6 +1,8 @@
 // Copyright 2020 Arthur Sonzogni. All rights reserved.
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
+#include <array>
+#include <cstddef>
 #include <functional>  // for function
 #include <memory>      // for allocator, make_shared
 #include <string>      // for string
@@ -13,18 +15,18 @@
 #include "ftxui/screen/box.hpp"       // for Box
 #include "ftxui/screen/screen.hpp"    // for Screen
 
+#include "ftxui/screen/terminal.hpp"
+
 namespace ftxui {
 
 namespace {
 // NOLINTNEXTLINE
-static std::string charset[] =
-#if defined(FTXUI_MICROSOFT_TERMINAL_FALLBACK)
-    // Microsoft's terminals often use fonts not handling the 8 unicode
-    // characters for representing the whole graph. Fallback with less.
-    {" ", " ", "█", " ", "█", "█", "█", "█", "█"};
-#else
-    {" ", "▗", "▐", "▖", "▄", "▟", "▌", "▙", "█"};
-#endif
+static const std::array<std::string, 9> graph_charset = {
+    " ", "▗", "▐", "▖", "▄", "▟", "▌", "▙", "█"};
+
+// NOLINTNEXTLINE
+static const std::array<std::string, 9> graph_charset_microsoft = {
+    " ", " ", "█", " ", "█", "█", "█", "█", "█"};
 
 class Graph : public Node {
  public:
@@ -46,16 +48,22 @@ class Graph : public Node {
     if (width <= 0 || height <= 0) {
       return;
     }
+
+    const auto& current_graph_charset = Terminal::GetQuirks().BlockCharacters()
+                                            ? graph_charset
+                                            : graph_charset_microsoft;
+
     auto data = graph_function_(width, height);
     int i = 0;
     for (int x = box_.x_min; x <= box_.x_max; ++x) {
-      const int height_1 = 2 * box_.y_max - data[i++];
-      const int height_2 = 2 * box_.y_max - data[i++];
+      const int height_1 = 2 * box_.y_max - data.at(static_cast<size_t>(i++));
+      const int height_2 = 2 * box_.y_max - data.at(static_cast<size_t>(i++));
       for (int y = box_.y_min; y <= box_.y_max; ++y) {
         const int yy = 2 * y;
-        int i_1 = yy < height_1 ? 0 : yy == height_1 ? 3 : 6;  // NOLINT
-        int i_2 = yy < height_2 ? 0 : yy == height_2 ? 1 : 2;  // NOLINT
-        screen.at(x, y) = charset[i_1 + i_2];                  // NOLINT
+        const int i_1 = yy < height_1 ? 0 : yy == height_1 ? 3 : 6;  // NOLINT
+        const int i_2 = yy < height_2 ? 0 : yy == height_2 ? 1 : 2;  // NOLINT
+        screen.at(x, y) =
+            current_graph_charset.at(static_cast<size_t>(i_1 + i_2));  // NOLINT
       }
     }
   }

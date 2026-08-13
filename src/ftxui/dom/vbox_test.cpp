@@ -44,7 +44,7 @@ TEST(VBoxText, NoFlex_NoFlex_NoFlex) {
       "012abcABC ",   //
       "012abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -72,7 +72,7 @@ TEST(VBoxText, FlexGrow_NoFlex_NoFlex) {
       "012 abcABC",   //
       "012  abcABC",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -100,7 +100,7 @@ TEST(VBoxText, NoFlex_FlexGrow_NoFlex) {
       "012abc ABC",   //
       "012abc  ABC",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -128,7 +128,7 @@ TEST(VBoxText, NoFlex_NoFlex_FlexGrow) {
       "012abcABC ",   //
       "012abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -158,7 +158,7 @@ TEST(VBoxText, FlexGrow_NoFlex_FlexGrow) {
       "012 abcABC  ",   //
       "012  abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -190,7 +190,7 @@ TEST(VBoxText, FlexGrow_FlexGrow_FlexGrow) {
       "012 abc  ABC  ",   //
       "012  abc  ABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -220,7 +220,7 @@ TEST(VBoxText, FlexShrink_NoFlex_NoFlex) {
       "012abcABC ",   //
       "012abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -248,7 +248,7 @@ TEST(VBoxText, NoFlex_FlexShrink_NoFlex) {
       "012abcABC ",   //
       "012abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -276,7 +276,7 @@ TEST(VBoxText, NoFlex_NoFlex_FlexShrink) {
       "012abcABC ",   //
       "012abcABC  ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -303,7 +303,7 @@ TEST(VBoxText, FlexShrink_NoFlex_FlexShrink) {
       "012abcABC",   //
       "012abcABC ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -332,7 +332,7 @@ TEST(VBoxText, FlexShrink_FlexShrink_FlexShrink) {
       "012abcABC  ",   //
       "012abcABC   ",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
@@ -361,12 +361,37 @@ TEST(VBoxText, FlexGrow_NoFlex_FlewShrink) {
       "012  abcABC",   //
       "012   abcABC",  //
   };
-  for (size_t i = 0; i < expectations.size(); ++i) {
+  for (int i = 0; i < (int)expectations.size(); ++i) {
     Screen screen(1, i);
     Render(screen, root);
     EXPECT_EQ(expectations[i], rotate(screen.ToString()));
   }
 }
 
+TEST(VBoxText, FlexFactor) {
+  auto root_grow = vbox({
+      vtext("012") | flex_grow_factor(2),
+      vtext("abc"),
+      vtext("ABC") | flex_grow_factor(1),
+  });
+  {
+    Screen screen(1, 12);
+    Render(screen, root_grow);
+    EXPECT_EQ("012  abcABC ", rotate(screen.ToString()));
+  }
+
+  auto root_shrink = vbox({
+      vtext("012") | flex_shrink_factor(2),
+      vtext("abc"),
+      vtext("ABC") | flex_shrink_factor(1),
+  });
+  {
+    Screen screen(1, 6);
+    Render(screen, root_shrink);
+    EXPECT_EQ("0abcAB", rotate(screen.ToString()));
+  }
+}
+
 }  // namespace ftxui
 // NOLINTEND
+

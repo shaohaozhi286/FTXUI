@@ -2,6 +2,10 @@ if (NOT FTXUI_BUILD_TESTS)
   return()
 endif()
 
+if (BUILD_SHARED_LIBS)
+  message(FATAL_ERROR "FTXUI unit tests require access to internal symbols which are hidden when building as shared libraries. To run tests, please configure with -DBUILD_SHARED_LIBS=OFF.")
+endif()
+
 enable_testing()
 
 include(cmake/ftxui_find_google_test.cmake)
@@ -49,6 +53,7 @@ add_executable(ftxui-tests
   src/ftxui/dom/vbox_test.cpp
   src/ftxui/screen/color_test.cpp
   src/ftxui/screen/compatibility_test.cpp
+  src/ftxui/screen/screen_test.cpp
   src/ftxui/screen/string_test.cpp
   src/ftxui/util/ref_test.cpp
 )
@@ -67,11 +72,6 @@ target_compile_features(ftxui-tests PRIVATE cxx_std_20)
 # function in different anonymous namespaces. This is not allowed in unity
 # builds, as it would result in multiple definitions of the same function.
 set_target_properties(ftxui-tests PROPERTIES UNITY_BUILD OFF)
-
-if (FTXUI_MICROSOFT_TERMINAL_FALLBACK)
-  target_compile_definitions(ftxui-tests
-    PRIVATE "FTXUI_MICROSOFT_TERMINAL_FALLBACK")
-endif()
 
 include(GoogleTest)
 gtest_discover_tests(ftxui-tests

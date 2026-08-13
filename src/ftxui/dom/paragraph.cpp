@@ -5,7 +5,9 @@
 #include <functional>  // for function
 #include <sstream>     // for basic_istream, stringstream
 #include <string>      // for string, allocator, getline
-#include <utility>     // for move
+#include <string_view>  // for string_view
+#include <utility>      // for move
+#include <vector>       // for vector
 
 #include "ftxui/dom/elements.hpp"  // for flexbox, Element, text, Elements, operator|, xflex, paragraph, paragraphAlignCenter, paragraphAlignJustify, paragraphAlignLeft, paragraphAlignRight
 #include "ftxui/dom/flexbox_config.hpp"  // for FlexboxConfig, FlexboxConfig::JustifyContent, FlexboxConfig::JustifyContent::Center, FlexboxConfig::JustifyContent::FlexEnd, FlexboxConfig::JustifyContent::SpaceBetween
@@ -61,7 +63,7 @@ void FlushAsciiRun(std::string* ascii_run,
   output->push_back(std::move(token));
 }
 
-Elements Split(const std::string& the_text) {
+Elements Split(std::string_view the_text) {
   std::vector<std::string> tokens;
   std::string ascii_run;
   std::string pending_prefix;
@@ -129,14 +131,17 @@ Elements Split(const std::string& the_text) {
   return output;
 }
 
-Element Split(const std::string& paragraph,
-              const std::function<Element(std::string)>& f) {
+Element Split(std::string_view paragraph,
+              const std::function<Element(std::string_view)>& f) {
   Elements output;
-  std::stringstream ss(paragraph);
-  std::string line;
-  while (std::getline(ss, line, '\n')) {
-    output.push_back(f(line));
+  size_t start = 0;
+  size_t end = paragraph.find('\n');
+  while (end != std::string_view::npos) {
+    output.push_back(f(paragraph.substr(start, end - start)));
+    start = end + 1;
+    end = paragraph.find('\n', start);
   }
+  output.push_back(f(paragraph.substr(start)));
   return vbox(std::move(output));
 }
 
@@ -154,7 +159,7 @@ Element paragraph(std::string_view the_text) {
 /// @ingroup dom
 /// @see flexbox.
 Element paragraphAlignLeft(std::string_view the_text) {
-  return Split(std::string(the_text), [](const std::string& line) {
+  return Split(the_text, [](std::string_view line) {
     static const auto config = FlexboxConfig().SetGap(0, 0);
     return flexbox(Split(line), config);
   });
@@ -165,7 +170,7 @@ Element paragraphAlignLeft(std::string_view the_text) {
 /// @ingroup dom
 /// @see flexbox.
 Element paragraphAlignRight(std::string_view the_text) {
-  return Split(std::string(the_text), [](const std::string& line) {
+  return Split(the_text, [](std::string_view line) {
     static const auto config = FlexboxConfig().SetGap(0, 0).Set(
         FlexboxConfig::JustifyContent::FlexEnd);
     return flexbox(Split(line), config);
@@ -177,7 +182,7 @@ Element paragraphAlignRight(std::string_view the_text) {
 /// @ingroup dom
 /// @see flexbox.
 Element paragraphAlignCenter(std::string_view the_text) {
-  return Split(std::string(the_text), [](const std::string& line) {
+  return Split(the_text, [](std::string_view line) {
     static const auto config =
         FlexboxConfig().SetGap(0, 0).Set(FlexboxConfig::JustifyContent::Center);
     return flexbox(Split(line), config);
@@ -190,7 +195,7 @@ Element paragraphAlignCenter(std::string_view the_text) {
 /// @ingroup dom
 /// @see flexbox.
 Element paragraphAlignJustify(std::string_view the_text) {
-  return Split(std::string(the_text), [](const std::string& line) {
+  return Split(the_text, [](std::string_view line) {
     static const auto config = FlexboxConfig().SetGap(0, 0).Set(
         FlexboxConfig::JustifyContent::SpaceBetween);
     Elements words = Split(line);

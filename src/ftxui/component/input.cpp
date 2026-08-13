@@ -27,20 +27,20 @@ namespace ftxui {
 
 namespace {
 
-std::vector<std::string> Split(const std::string& input) {
+std::vector<std::string> SplitLines(std::string_view input) {
   std::vector<std::string> output;
-  std::stringstream ss(input);
-  std::string line;
-  while (std::getline(ss, line)) {
-    output.push_back(line);
+  size_t start = 0;
+  size_t end = input.find('\n');
+  while (end != std::string_view::npos) {
+    output.push_back(std::string(input.substr(start, end - start)));
+    start = end + 1;
+    end = input.find('\n', start);
   }
-  if (input.back() == '\n') {
-    output.emplace_back("");
-  }
+  output.push_back(std::string(input.substr(start)));
   return output;
 }
 
-size_t GlyphWidth(const std::string& input, size_t iter) {
+size_t GlyphWidth(std::string_view input, size_t iter) {
   uint32_t ucs = 0;
   if (!EatCodePoint(input, iter, &iter, &ucs)) {
     return 0;
@@ -79,7 +79,7 @@ bool IsWordCodePoint(uint32_t codepoint) {
   return false;  // NOT_REACHED();
 }
 
-bool IsWordCharacter(const std::string& input, size_t iter) {
+bool IsWordCharacter(std::string_view input, size_t iter) {
   uint32_t ucs = 0;
   if (!EatCodePoint(input, iter, &iter, &ucs)) {
     return false;
@@ -117,7 +117,7 @@ class InputBase : public ComponentBase, public InputOption {
     }
 
     Elements elements;
-    const std::vector<std::string> lines = Split(*content);
+    const std::vector<std::string> lines = SplitLines(*content);
 
     cursor_position() = util::clamp(cursor_position(), 0, (int)content->size());
 
@@ -148,12 +148,14 @@ class InputBase : public ComponentBase, public InputOption {
       }
 
       // The cursor is at the end of the line.
+      const std::string cursor_cell = is_focused ? " " : "";
       if (cursor_char_index >= (int)line.size()) {
-        elements.push_back(hbox({
-                               Text(line),
-                               text(" ") | focused | reflect(cursor_box_),
-                           }) |
-                           xflex);
+        elements.push_back(
+            hbox({
+                Text(line),
+                text(cursor_cell) | focused | reflect(cursor_box_),
+            }) |
+            xflex);
         continue;
       }
 
@@ -203,7 +205,7 @@ class InputBase : public ComponentBase, public InputOption {
     const size_t end = cursor_position();
     content->erase(start, end - start);
     cursor_position() = static_cast<int>(start);
-    on_change();
+    App::PostEventOrExecute(on_change);
     return true;
   }
 
@@ -219,7 +221,7 @@ class InputBase : public ComponentBase, public InputOption {
 
   bool HandleDelete() {
     if (DeleteImpl()) {
-      on_change();
+      App::PostEventOrExecute(on_change);
       return true;
     }
     return false;
@@ -357,7 +359,7 @@ class InputBase : public ComponentBase, public InputOption {
     if (multiline()) {
       HandleCharacter("\n");
     }
-    on_enter();
+    App::PostEventOrExecute(on_enter);
     return true;
   }
 
@@ -368,7 +370,7 @@ class InputBase : public ComponentBase, public InputOption {
     }
     content->insert(cursor_position(), character);
     cursor_position() += static_cast<int>(character.size());
-    on_change();
+    App::PostEventOrExecute(on_change);
     return true;
   }
 
@@ -492,7 +494,7 @@ class InputBase : public ComponentBase, public InputOption {
     }
 
     // Find the line and index of the cursor.
-    std::vector<std::string> lines = Split(*content);
+    std::vector<std::string> lines = SplitLines(*content);
     int cursor_line = 0;
     int cursor_char_index = cursor_position();
     for (const auto& line : lines) {
@@ -543,7 +545,7 @@ class InputBase : public ComponentBase, public InputOption {
           static_cast<int>(GlyphNext(content(), cursor_position()));
     }
 
-    on_change();
+    App::PostEventOrExecute(on_change);
     return true;
   }
 

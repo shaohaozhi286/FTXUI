@@ -1,9 +1,14 @@
 // Copyright 2020 Arthur Sonzogni. All rights reserved.
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
+#include <cstddef>
+#include <initializer_list>
 #include <map>  // for map
+#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>  // for move
+#include <vector>
 
 #include "ftxui/component/event.hpp"
 #include "ftxui/component/mouse.hpp"  // for Mouse
@@ -66,6 +71,167 @@ Event Event::CursorShape(std::string_view input, int shape) {
   event.type_ = Type::CursorShape;
   event.data_.cursor_shape = shape;  // NOLINT
   return event;
+}
+
+/// @brief An event corresponding to a terminal name and version report.
+// static
+Event Event::TerminalNameVersion(std::string_view input,
+                                 std::string name,
+                                 int version) {
+  Event event;
+  event.input_ = std::string(input);
+  event.type_ = Type::TerminalNameVersion;
+  event.terminal_name_ = std::make_shared<std::string>(std::move(name));
+  event.data_.terminal_version = version;
+  return event;
+}
+
+/// @brief An event corresponding to a terminal emulator report.
+// static
+Event Event::TerminalEmulator(std::string_view input,
+                              std::string name,
+                              std::string version) {
+  Event event;
+  event.input_ = std::string(input);
+  event.type_ = Type::TerminalEmulator;
+  event.terminal_name_ = std::make_shared<std::string>(std::move(name));
+  event.terminal_emulator_version_ =
+      std::make_shared<std::string>(std::move(version));
+  return event;
+}
+
+/// @brief An event corresponding to a terminal capabilities report.
+// static
+Event Event::TerminalCapabilities(std::string_view input,
+                                  std::vector<int> capabilities) {
+  Event event;
+  event.input_ = std::string(input);
+  event.type_ = Type::TerminalCapabilities;
+  event.terminal_capabilities_ =
+      std::make_shared<std::vector<int>>(std::move(capabilities));
+  return event;
+}
+
+/// @brief Return the names of the terminal capabilities.
+std::vector<std::string> Event::TerminalCapabilityNames() const {
+  if (type_ != Type::TerminalCapabilities) {
+    return {};
+  }
+
+  std::vector<std::string> names;
+  for (const int cap : *terminal_capabilities_) {
+    switch (cap) {
+      case 0:
+        break;
+      case 1:
+        names.emplace_back("132-columns");
+        break;
+      case 2:
+        names.emplace_back("Printer-port");
+        break;
+      case 3:
+        names.emplace_back("ReGIS-graphics");
+        break;
+      case 4:
+        names.emplace_back("Sixel-graphics");
+        break;
+      case 6:
+        names.emplace_back("Selective-erase");
+        break;
+      case 7:
+        names.emplace_back("Soft-character-set-(DRCS)");
+        break;
+      case 8:
+        names.emplace_back("User-defined-keys-(UDK)");
+        break;
+      case 9:
+        names.emplace_back("National-replacement-character-sets-(NRC)");
+        break;
+      case 12:
+        names.emplace_back("Local-editing");
+        break;
+      case 15:
+        names.emplace_back("Technical-character-set");
+        break;
+      case 18:
+        names.emplace_back("Windowing-capability");
+        break;
+      case 21:
+        names.emplace_back("Horizontal-scrolling");
+        break;
+      case 22:
+        names.emplace_back("ANSI-color");
+        break;
+      case 28:
+        names.emplace_back("Font-loading");
+        break;
+      case 29:
+        names.emplace_back("ANSI-text-locator-(Mouse)");
+        break;
+      case 52:
+        names.emplace_back("UTF-8");
+        break;
+      case 61:
+        names.emplace_back("VT510");
+        break;
+      case 62:
+        names.emplace_back("VT220");
+        break;
+      case 63:
+        names.emplace_back("VT320");
+        break;
+      case 64:
+        names.emplace_back("VT420");
+        break;
+      case 65:
+        names.emplace_back("VT525");
+        break;
+      default:
+        names.emplace_back("Unknown-" + std::to_string(cap));
+        break;
+    }
+  }
+  return names;
+}
+
+/// @brief Whether the event is a terminal name and version report.
+bool Event::IsTerminalNameVersion() const {
+  return type_ == Type::TerminalNameVersion;
+}
+
+/// @brief Return the terminal name.
+const std::string& Event::TerminalName() const {
+  return *terminal_name_;
+}
+
+/// @brief Return the terminal version.
+int Event::TerminalVersion() const {
+  return data_.terminal_version;
+}
+
+/// @brief Whether the event is a terminal capabilities report.
+bool Event::IsTerminalCapabilities() const {
+  return type_ == Type::TerminalCapabilities;
+}
+
+/// @brief Return the terminal capabilities.
+const std::vector<int>& Event::TerminalCapabilities() const {
+  return *terminal_capabilities_;
+}
+
+/// @brief Whether the event is a terminal emulator report.
+bool Event::IsTerminalEmulator() const {
+  return type_ == Type::TerminalEmulator;
+}
+
+/// @brief Return the terminal emulator name.
+const std::string& Event::TerminalEmulatorName() const {
+  return *terminal_name_;
+}
+
+/// @brief Return the terminal emulator version.
+const std::string& Event::TerminalEmulatorVersion() const {
+  return *terminal_emulator_version_;
 }
 
 /// @brief An custom event whose meaning is defined by the user of the library.
@@ -275,6 +441,23 @@ std::string Event::DebugString() const {
       return "Event::CursorPosition(" + input_ + ", " +
              std::to_string(data_.cursor.x) + ", " +
              std::to_string(data_.cursor.y) + ")";
+    case Type::TerminalNameVersion:
+      return "Event::TerminalNameVersion(" + input_ + ", " + *terminal_name_ +
+             ", " + std::to_string(data_.terminal_version) + ")";
+    case Type::TerminalEmulator:
+      return "Event::TerminalEmulator(" + input_ + ", " + *terminal_name_ +
+             ", " + *terminal_emulator_version_ + ")";
+    case Type::TerminalCapabilities: {
+      std::string out = "Event::TerminalCapabilities(" + input_ + ", {";
+      for (size_t i = 0; i < terminal_capabilities_->size(); ++i) {
+        out += std::to_string((*terminal_capabilities_)[i]);
+        if (i + 1 < terminal_capabilities_->size()) {
+          out += ", ";
+        }
+      }
+      out += "})";
+      return out;
+    }
     default: {
       auto event_it = event_to_string.find(*this);
       if (event_it != event_to_string.end()) {

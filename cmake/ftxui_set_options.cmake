@@ -6,6 +6,18 @@ function(ftxui_set_options library)
     set_target_properties(${library} PROPERTIES OUTPUT_NAME "ftxui-${library}")
   endif()
 
+  if (BUILD_SHARED_LIBS)
+    target_compile_definitions(${library} PUBLIC COMPONENT_BUILD)
+    set_target_properties(${library} PROPERTIES
+      CXX_VISIBILITY_PRESET hidden
+      VISIBILITY_INLINES_HIDDEN ON
+    )
+  endif()
+
+  string(TOUPPER ${library} LIBRARY_UPPER)
+  string(REPLACE "-" "_" LIBRARY_UPPER ${LIBRARY_UPPER})
+  target_compile_definitions(${library} PRIVATE IS_FTXUI_${LIBRARY_UPPER}_IMPL=1)
+
   if (FTXUI_CLANG_TIDY)
     if (NOT CLANG_TIDY_EXE)
       message(FATAL_ERROR "clang-tidy requested but executable not found")
@@ -15,19 +27,34 @@ function(ftxui_set_options library)
       PROPERTIES CXX_CLANG_TIDY "${CLANG_TIDY_EXE};-warnings-as-errors=*"
     )
 
-    # By using "PUBLIC" as opposed to "SYSTEM INTERFACE", the compiler warning
-    # are enforced on the headers. This is behind "FTXUI_CLANG_TIDY", so that it
-    # applies only when developing FTXUI and on the CI. User's of the library
-    # get only the SYSTEM INTERFACE instead.
+    # By using "PUBLIC" as opposed to "INTERFACE", the compiler warnings are
+    # enforced on the headers. This is behind "FTXUI_CLANG_TIDY", so that it
+    # applies only when developing FTXUI and on the CI. Users of the library
+    # get only the plain INTERFACE instead.
     target_include_directories(${library}
       PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     )
   else()
-    target_include_directories(${library} SYSTEM
-      INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    )
+    if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+      # Building FTXUI as a standalone project.  Do NOT mark as SYSTEM: if
+      # a sibling FTXUI target (e.g. dom depending on screen) inherits this
+      # path via INTERFACE_SYSTEM_INCLUDE_DIRECTORIES, CMake demotes the
+      # private -I to -isystem.  That path is then searched *after* any -I
+      # added by a package manager (e.g. MacPorts' -I/opt/local/include),
+      # letting a stale installed FTXUI shadow the sources being built.
+      target_include_directories(${library}
+        INTERFACE
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      )
+    else()
+      # Consumed via add_subdirectory / FetchContent: keep SYSTEM so that
+      # consumers do not receive warnings from FTXUI headers.
+      target_include_directories(${library} SYSTEM
+        INTERFACE
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      )
+    endif()
   endif()
 
   target_include_directories(${library} SYSTEM
@@ -92,14 +119,9 @@ function(ftxui_set_options library)
     endif()
   endif()
 
-
-  if (FTXUI_MICROSOFT_TERMINAL_FALLBACK)
-    target_compile_definitions(${library}
-      PRIVATE "FTXUI_MICROSOFT_TERMINAL_FALLBACK")
-  endif()
 endfunction()
 
 if (EMSCRIPTEN)
   string(APPEND CMAKE_CXX_FLAGS " -s USE_PTHREADS")
-  string(APPEND CMAKE_EXE_LINKER_FLAGS " -s PROXY_TO_PTHREAD")
+  string(APPEND CMAKE_EXE_LINKER_FLAGS " -s PROXY_TO_PTHREAD -s ALLOW_MEMORY_GROWTH=1")
 endif()

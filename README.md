@@ -63,6 +63,8 @@ A simple cross-platform C++ library for terminal based user interfaces!
     - [OpenSUSE](https://build.opensuse.org/package/show/devel:libraries:c_c++/ftxui)
     - [XMake](https://xmake.io) repository [package](https://github.com/xmake-io/xmake-repo/blob/dev/packages/f/ftxui/xmake.lua)
     - [Nix](https://github.com/ArthurSonzogni/FTXUI/blob/main/flake.nix)
+    - [Amalgamated (single-header/source)](https://arthursonzogni.github.io/FTXUI/installation_amalgamated.html) (from 7.0.0)
+    - [conda-forge](https://anaconda.org/channels/conda-forge/packages/ftxui/overview)
  * Good practices: documentation, tests, fuzzers, performance tests, automated CI, automated packaging, etc...
 
 ## Documentation
@@ -73,9 +75,15 @@ A simple cross-platform C++ library for terminal based user interfaces!
 - [Examples (WebAssembly)](https://arthursonzogni.github.io/FTXUI/examples/)
 - [Build using CMake](https://arthursonzogni.github.io/FTXUI/#build-cmake)
 - [Build using Bazel](https://arthursonzogni.github.io/FTXUI/#build-bazel)
+- [Build using Meson](doc/installation_meson.md)
 
 ## Example
 ~~~cpp
+#include <ftxui/ftxui.hpp>
+using namespace ftxui;
+
+int main() {
+  auto document =
     vbox({
       hbox({
         text("one") | border,
@@ -87,28 +95,45 @@ A simple cross-platform C++ library for terminal based user interfaces!
       gauge(0.50) | color(Color::White),
       gauge(0.75) | color(Color::Blue),
     });
+
+  auto screen = Screen::Create(Dimension::Full());
+  Render(screen, document);
+  screen.Print();
+
+  return 0;
+}
 ~~~
 
 ![image](https://github.com/ArthurSonzogni/FTXUI/assets/4759106/569bf043-4e85-4245-aad5-2324572135c4)
 
 ## Short gallery
 
+FTXUI is organized into three modules:
+1.  **screen**: Low-level rendering (colors, pixels, terminal)
+2.  **dom**: Layout and composition (hierarchical elements)
+3.  **component**: User interaction (widgets, events, main loop)
+
+For most users, including everything at once is the simplest way to start:
+- Header: `#include <ftxui/ftxui.hpp>`
+- CMake target: `ftxui::ftxui`
+- Bazel target: `@ftxui//:ftxui`
+
 #### DOM
 
-This module defines a hierarchical set of Element. An Element manages layout and can be responsive to the terminal dimensions.
+This module defines a hierarchical set of `Element`. An `Element` manages layout and can be responsive to the terminal dimensions.
 
-They are declared in [<ftxui/dom/elements.hpp>](https://arthursonzogni.github.io/FTXUI/elements_8hpp_source.html
+They are declared in [`<ftxui/dom/elements.hpp>`](https://arthursonzogni.github.io/FTXUI/elements_8hpp_source.html
 )
   
 <details><summary>Layout</summary>
 
-Element can be arranged together:
+`Element` can be arranged together:
   - horizontally with `hbox`
   - vertically with `vbox`
   - inside a grid with `gridbox`
   - wrap along one direction using the `flexbox`.
   
-Element can become flexible using the `flex` decorator.
+`Element` can become flexible using the `flex` decorator.
   
 [Example](https://arthursonzogni.github.io/FTXUI/examples_2dom_2vbox_hbox_8cpp-example.html) using `hbox`, `vbox` and `filler`.
 
@@ -152,7 +177,7 @@ FTXUI supports the pipe operator. It means: `decorator1(decorator2(element))` an
 
 <details><summary>Colors</summary>
 
-FTXUI support every color palette:
+FTXUI supports every color palette:
 
 Color [gallery](https://arthursonzogni.github.io/FTXUI/examples_2dom_2color_gallery_8cpp-example.html):
 ![image](https://user-images.githubusercontent.com/4759106/147248595-04c7245a-5b85-4544-809d-a5984fc6f9e7.png)
@@ -161,10 +186,10 @@ Color [gallery](https://arthursonzogni.github.io/FTXUI/examples_2dom_2color_gall
   
 <details><summary>Border and separator</summary>
 
-Use decorator border and element separator() to subdivide your UI:
+Use decorator `border` and element `separator()` to subdivide your UI:
   
 ```cpp
-auto document = vbox({
+Element document = vbox({
     text("top"),
     separator(),
     text("bottom"),
@@ -184,11 +209,11 @@ A simple piece of text is represented using `text("content")`.
 
 To support text wrapping following spaces the following functions are provided:
 ```cpp
-Element paragraph(std::string text);
-Element paragraphAlignLeft(std::string text);
-Element paragraphAlignRight(std::string text);
-Element paragraphAlignCenter(std::string text);
-Element paragraphAlignJustify(std::string text);
+Element paragraph(string text);
+Element paragraphAlignLeft(string text);
+Element paragraphAlignRight(string text);
+Element paragraphAlignCenter(string text);
+Element paragraphAlignJustify(string text);
 ```
   
 [Paragraph example](https://arthursonzogni.github.io/FTXUI/examples_2dom_2paragraph_8cpp-example.html)
@@ -209,7 +234,7 @@ A class to easily style a table of data.
 
 <details><summary>Canvas</summary>
 
-Drawing can be made on a Canvas, using braille, block, or simple characters:
+Drawing can be made on a `Canvas`, using braille, block, or simple characters:
   
 Simple [example](https://github.com/ArthurSonzogni/FTXUI/blob/master/examples/dom/canvas.cpp):
   
@@ -222,9 +247,9 @@ Complex [examples](https://github.com/ArthurSonzogni/FTXUI/blob/master/examples/
 
 #### Component
 
-ftxui/component produces dynamic UI, reactive to the user's input. It defines a set of ftxui::Component. A component reacts to Events (keyboard, mouse, resize, ...) and Renders as an Element (see previous section).
+`ftxui/component` produces dynamic UI, reactive to the user's input. It defines a set of `ftxui::Component`. A component reacts to `Event`s (keyboard, mouse, resize, ...) and `Render`s as an `Element` (see previous section).
 
-Prebuilt components are declared in [<ftxui/component/component.hpp>](https://arthursonzogni.github.io/FTXUI/component_8hpp_source.html)
+Prebuilt components are declared in [`<ftxui/component/component.hpp>`](https://arthursonzogni.github.io/FTXUI/component_8hpp_source.html)
 
 <details><summary>Gallery</summary>
 
@@ -342,6 +367,7 @@ Feel free to add your projects here:
 - [Fallout terminal hacking](https://github.com/gshigin/yet-another-fallout-terminal-hacking-game)
 - [Lazylist](https://github.com/zhuyongqi9/lazylist)
 - [Memory game](https://github.com/mikolajlubiak/memory)
+- [nfolens](https://github.com/a4x7/nfolens)
 - [Path Finder](https://github.com/Ruebled/Path_Finder)
 - [Pigeon ROS TUI](https://github.com/PigeonSensei/Pigeon_ros_tui)
 - [SHOOT!](https://github.com/ShingZhanho/ENGG1340-Project-25Spring)
@@ -365,6 +391,7 @@ Feel free to add your projects here:
 - [ltuiny](https://github.com/adrianoviana87/ltuiny)
 - [openJuice](https://github.com/mikomikotaishi/openJuice)
 - [ostree-tui](https://github.com/AP-Sensing/ostree-tui)
+- [OvenbirdBT](https://github.com/ziptt/OvenbirdBT)
 - [pciex](https://github.com/s0nx/pciex)
 - [resource-monitor](https://github.com/catalincd/resource-monitor)
 - [rw-tui](https://github.com/LeeKyuHyuk/rw-tui)
@@ -404,15 +431,18 @@ It is **highly** recommended to use CMake FetchContent to depend on FTXUI so you
 include(FetchContent)
 FetchContent_Declare(ftxui
   GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui
-  GIT_TAG v6.1.9
+  GIT_TAG v7.0.3
 )
 FetchContent_MakeAvailable(ftxui)
 
 target_link_libraries(your_target PRIVATE
-    # Chose a submodule
-    ftxui::component
-    ftxui::dom
-    ftxui::screen
+    # Use the umbrella target (recommended)
+    ftxui::ftxui
+
+    # Or chose a submodule
+    # ftxui::component
+    # ftxui::dom
+    # ftxui::screen
 )
 ```
 
@@ -422,7 +452,7 @@ target_link_libraries(your_target PRIVATE
 ```starlark
 bazel_dep(
     name = "ftxui",
-    version = "v6.1.9",
+    version = "7.0.3",
 )
 ```
 
@@ -441,6 +471,20 @@ cc_binary(
         # "@ftxui//:ftxui",
     ],
 )
+```
+
+## Build using Meson
+
+FTXUI can also be built using [Meson](https://mesonbuild.com/). See [doc/installation_meson.md](doc/installation_meson.md) for detailed instructions.
+
+```bash
+meson setup builddir
+ninja -C builddir
+```
+
+To use FTXUI as a subproject in your Meson project, create a `subprojects/ftxui.wrap` file or use it as a dependency:
+```meson
+ftxui_dep = dependency('ftxui-component')
 ```
 
 

@@ -4,7 +4,6 @@
 #include <algorithm>                              // for max, min
 #include <ftxui/component/component_options.hpp>  // for SliderOption
 #include <ftxui/dom/direction.hpp>  // for Direction, Direction::Down, Direction::Left, Direction::Right, Direction::Up
-#include <string>                   // for allocator
 #include <utility>                  // for move
 
 #include "ftxui/component/app.hpp"             // for Component
@@ -50,7 +49,8 @@ Direction Opposite(Direction d) {
 template <class T>
 class SliderBase : public SliderOption<T>, public ComponentBase {
  public:
-  explicit SliderBase(SliderOption<T> options) : SliderOption<T>(options) {}
+  explicit SliderBase(SliderOption<T> options)
+      : SliderOption<T>(std::move(options)) {}
 
   Element OnRender() override {
     auto gauge_color =
@@ -94,9 +94,7 @@ class SliderBase : public SliderOption<T>, public ComponentBase {
 
     this->value() = std::max(this->min(), std::min(this->max(), this->value()));
     if (old_value != this->value()) {
-      if (this->on_change) {
-        this->on_change();
-      }
+      App::PostEventOrExecute(this->on_change);
       return true;
     }
 
@@ -140,8 +138,8 @@ class SliderBase : public SliderOption<T>, public ComponentBase {
 
     this->value() = std::max(this->min(), std::min(this->max(), this->value()));
 
-    if (old_value != this->value() && this->on_change) {
-      this->on_change();
+    if (old_value != this->value()) {
+      App::PostEventOrExecute(this->on_change);
     }
     return true;
   }
@@ -314,20 +312,20 @@ Component Slider(ConstStringRef label,
 /// ```
 template <typename T>
 Component Slider(SliderOption<T> options) {
-  return Make<SliderBase<T>>(options);
+  return Make<SliderBase<T>>(std::move(options));
 }
 
-template Component Slider(SliderOption<int8_t>);
-template Component Slider(SliderOption<int16_t>);
-template Component Slider(SliderOption<int32_t>);
-template Component Slider(SliderOption<int64_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<int8_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<int16_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<int32_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<int64_t>);
 
-template Component Slider(SliderOption<uint8_t>);
-template Component Slider(SliderOption<uint16_t>);
-template Component Slider(SliderOption<uint32_t>);
-template Component Slider(SliderOption<uint64_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<uint8_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<uint16_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<uint32_t>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<uint64_t>);
 
-template Component Slider(SliderOption<float>);
-template Component Slider(SliderOption<double>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<float>);
+template FTXUI_EXPORT(COMPONENT) Component Slider(SliderOption<double>);
 
 }  // namespace ftxui

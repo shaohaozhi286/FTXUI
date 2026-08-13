@@ -152,6 +152,45 @@ TEST(SelectionTest, StyleSelection) {
   }
 }
 
+// The selection style must not persist on an element rendered again after the
+// selection was cleared. See #1309.
+TEST(SelectionTest, StyleClearedWhenSelectionCleared) {
+  auto element = text("Lorem ipsum dolor");
+
+  {
+    auto screen = App::FixedSize(20, 1);
+    Selection selection(2, 0, 9, 0);
+    Render(screen, element.get(), selection);
+    EXPECT_EQ(screen.CellAt(2, 0).inverted, true);
+  }
+
+  {
+    auto screen = App::FixedSize(20, 1);
+    Render(screen, element);
+    for (int i = 0; i < 20; i++) {
+      EXPECT_EQ(screen.CellAt(i, 0).inverted, false);
+    }
+  }
+}
+
+// A selection over a subset of the lines of a multi-line text must style and
+// extract exactly the selected rows.
+TEST(SelectionTest, MultiLineTextSelection) {
+  auto element = text("abc\ndef\nghi");
+  auto screen = App::FixedSize(3, 3);
+  Selection selection(1, 1, 2, 2);
+  Render(screen, element.get(), selection);
+
+  EXPECT_EQ(selection.GetParts(), "ef\nghi");
+  for (int y = 0; y < 3; y++) {
+    for (int x = 0; x < 3; x++) {
+      const bool selected = (y == 1 && x >= 1) || y == 2;
+      EXPECT_EQ(screen.CellAt(x, y).inverted, selected)
+          << "at (" << x << "," << y << ")";
+    }
+  }
+}
+
 TEST(SelectionTest, VBoxSelection) {
   auto element = vbox({
       text("Lorem ipsum dolor"),
@@ -199,6 +238,59 @@ TEST(SelectionTest, HBoxSelection) {
   EXPECT_EQ(selection.GetParts(), "rem ipsum dolorUt e");
   EXPECT_EQ(screen.ToString(),
             "Lo\x1B[7mrem ipsum dolorUt e\x1B[27mnim ad minim       ");
+}
+
+// The next two tests drive a selection through `App`/`Loop` (press, move,
+// release, each in its own frame), then re-render the same document with a
+// plain `Selection` built from `screen.GetSelection()`'s row/column extent
+// to check exactly what got highlighted. `screen.CellAt()` can't be used
+// directly after `loop.RunOnce()`: `App::Internal::Draw()` clears its cell
+// buffer at the end of every frame (to build the next diff), so by the time
+// a test can inspect it, it's already back to defaults.
+
+// A selection built up over several separate frames (press, then one or
+// more moves, then release each processed in their own `loop.RunOnce()`)
+// must render the same thing as if it had been submitted all at once: the
+// first row from the start column to the end of the line, the last row from
+// the start of the line to the end column, and every row in between fully
+// selected (this is regular flow/text selection, not a rectangular block
+// selection -- see the pre-existing VBoxSelection/HBoxSelection tests).
+TEST(SelectionTest, SelectionAcrossMultipleFrames) {
+  // Each row is "0123456": column `x` holds the digit `x`.
+  const std::string content =
+      "0123456\n0123456\n0123456\n0123456\n0123456\n0123456\n0123456";
+  auto component = Renderer([&] { return text(content); });
+  auto screen = App::FixedSize(7, 7);
+  Loop loop(&screen, component);
+  loop.RunOnce();
+
+  screen.PostEvent(MousePressed(2, 2));  // local (1, 1)
+  loop.RunOnce();
+  screen.PostEvent(MouseMove(4, 4));  // local (3, 3)
+  loop.RunOnce();
+  screen.PostEvent(MouseMove(6, 6));  // local (5, 5)
+  loop.RunOnce();
+  screen.PostEvent(MouseReleased(6, 6));
+  loop.RunOnce();
+
+  EXPECT_EQ(screen.GetSelection(),
+            "123456\n0123456\n0123456\n0123456\n012345");
+
+  // Cross-check what actually gets rendered for that selection: row 1 from
+  // column 1 to the end, rows 2-4 fully selected, row 5 from the start to
+  // column 5.
+  auto element = text(content);
+  auto render_screen = App::FixedSize(7, 7);
+  Selection selection(1, 1, 5, 5);
+  Render(render_screen, element.get(), selection);
+  EXPECT_EQ(render_screen.ToString(),
+            "0123456\r\n"
+            "0\x1B[7m123456\x1B[27m\r\n"
+            "\x1B[7m0123456\x1B[27m\r\n"
+            "\x1B[7m0123456\x1B[27m\r\n"
+            "\x1B[7m0123456\x1B[27m\r\n"
+            "\x1B[7m012345\x1B[27m6\r\n"
+            "0123456");
 }
 
 TEST(SelectionTest, HBoxSaturatedSelection) {

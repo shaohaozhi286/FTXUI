@@ -7,8 +7,9 @@
 
 #include <cstddef>
 #include "ftxui/dom/node.hpp"
-#include "ftxui/dom/selection.hpp"  // for Selection
-#include "ftxui/screen/screen.hpp"  // for Screen
+#include "ftxui/dom/selection.hpp"    // for Selection
+#include "ftxui/screen/screen.hpp"    // for Screen
+#include "ftxui/screen/terminal.hpp"  // for GetQuirks
 
 namespace ftxui {
 
@@ -30,8 +31,7 @@ void Node::ComputeRequirement() {
 
   // Propagate the focused requirement.
   for (size_t i = 1; i < children_.size(); ++i) {
-    if (!requirement_.focused.enabled &&
-        children_[i]->requirement().focused.enabled) {
+    if (requirement_.focused.Prefer(children_[i]->requirement().focused)) {
       requirement_.focused = children_[i]->requirement().focused;
     }
   }
@@ -79,6 +79,15 @@ std::string Node::GetSelectedContent(Selection& selection) {
   return content;
 }
 
+void Node::Reserved1() {}
+void Node::Reserved2() {}
+void Node::Reserved3() {}
+void Node::Reserved4() {}
+void Node::Reserved5() {}
+void Node::Reserved6() {}
+void Node::Reserved7() {}
+void Node::Reserved8() {}
+
 /// @brief Display an element on a ftxui::Screen.
 /// @ingroup dom
 void Render(Screen& screen, const Element& element) {
@@ -121,29 +130,31 @@ void Render(Screen& screen, Node* node, Selection& selection) {
     node->Select(selection);
   }
 
-  if (node->requirement().focused.enabled
-#if defined(FTXUI_MICROSOFT_TERMINAL_FALLBACK)
-      // Setting the cursor to the right position allow folks using CJK (China,
-      // Japanese, Korean, ...) characters to see their [input method editor]
-      // displayed at the right location. See [issue].
-      //
-      // [input method editor]:
-      // https://en.wikipedia.org/wiki/Input_method
-      //
-      // [issue]:
-      // https://github.com/ArthurSonzogni/FTXUI/issues/2#issuecomment-505282355
-      //
-      // Unfortunately, Microsoft terminal do not handle properly hiding the
-      // cursor. Instead the character under the cursor is hidden, which is a
-      // big problem. As a result, we can't enable setting cursor to the right
-      // location. It will be displayed at the bottom right corner.
-      // See:
-      // https://github.com/microsoft/terminal/issues/1203
-      // https://github.com/microsoft/terminal/issues/3093
-      &&
-      node->requirement().focused.cursor_shape != Screen::Cursor::Shape::Hidden
-#endif
-  ) {
+  bool use_cursor = node->requirement().focused.enabled;
+  if (!Terminal::GetQuirks().CursorHiding() &&
+      node->requirement().focused.cursor_shape ==
+          Screen::Cursor::Shape::Hidden) {
+    // Setting the cursor to the right position allow folks using CJK (China,
+    // Japanese, Korean, ...) characters to see their [input method editor]
+    // displayed at the right location. See [issue].
+    //
+    // [input method editor]:
+    // https://en.wikipedia.org/wiki/Input_method
+    //
+    // [issue]:
+    // https://github.com/ArthurSonzogni/FTXUI/issues/2#issuecomment-505282355
+    //
+    // Unfortunately, Microsoft terminal do not handle properly hiding the
+    // cursor. Instead the character under the cursor is hidden, which is a
+    // big problem. As a result, we can't enable setting cursor to the right
+    // location. It will be displayed at the bottom right corner.
+    // See:
+    // https://github.com/microsoft/terminal/issues/1203
+    // https://github.com/microsoft/terminal/issues/3093
+    use_cursor = false;
+  }
+
+  if (use_cursor) {
     screen.SetCursor(Screen::Cursor{
         node->requirement().focused.node->box_.x_min,
         node->requirement().focused.node->box_.y_min,

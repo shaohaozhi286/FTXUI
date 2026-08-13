@@ -1,40 +1,20 @@
 # ftxui_common.bzl
 
-load("@rules_cc//cc:defs.bzl", "cc_library")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 # Microsoft terminal is a bit buggy ¯\_(ツ)_/¯ and MSVC uses bad defaults.
 def windows_copts():
     MSVC_COPTS = [
-      # Microsoft Visual Studio must decode sources files as UTF-8.
-      "/utf-8",
+        # Microsoft Visual Studio must decode sources files as UTF-8.
+        "/utf-8",
 
-      # Microsoft Visual Studio must interpret the codepoint using unicode.
-      "/DUNICODE",
-      "/D_UNICODE",
-
-      # Fallback for Microsoft Terminal.
-      # This
-      # - Replace missing font symbols by others.
-      # - Reduce screen position pooling frequency to deals against a Microsoft
-      #   race condition. This was fixed in 2020, but clients never not updated.
-      #   - https://github.com/microsoft/terminal/pull/7583
-      #   - https://github.com/ArthurSonzogni/FTXUI/issues/136
-      "/DFTXUI_MICROSOFT_TERMINAL_FALLBACK",
+        # Microsoft Visual Studio must interpret the codepoint using unicode.
+        "/DUNICODE",
+        "/D_UNICODE",
     ]
 
-    WINDOWS_COPTS = [
-      # Fallback for Microsoft Terminal.
-      # This
-      # - Replace missing font symbols by others.
-      # - Reduce screen position pooling frequency to deals against a Microsoft
-      #   race condition. This was fixed in 2020, but clients are still using
-      #   old versions.
-      #   - https://github.com/microsoft/terminal/pull/7583
-      #   - https://github.com/ArthurSonzogni/FTXUI/issues/136
-      "-DFTXUI_MICROSOFT_TERMINAL_FALLBACK",
-    ];
-    
+    WINDOWS_COPTS = []
+
     return select({
         # MSVC:
         "@rules_cc//cc/compiler:msvc-cl": MSVC_COPTS,
@@ -51,17 +31,21 @@ def ftxui_cc_library(
         visibility = ["//visibility:public"],
         deps = []):
 
+    copts = windows_copts()
+    defines = ["IS_FTXUI_" + name.upper() + "_IMPL=1"]
+
     cc_library(
         name = name,
         srcs = srcs,
         hdrs = hdrs,
+        defines = defines,
         linkopts = linkopts,
         deps = deps,
         strip_include_prefix = "include",
         includes = [
             "src",
         ],
-        copts = windows_copts(),
+        copts = copts,
         visibility = visibility,
     )
 
@@ -72,12 +56,6 @@ def generate_examples():
     cpp_files = native.glob(["examples/**/*.cpp"])
 
     for src in cpp_files:
-        # Skip failing examples due to the color_info_sorted_2d.ipp dependency.
-        if src == "examples/component/homescreen.cpp" or \
-           src == "examples/dom/color_info_palette256.cpp" or \
-           src == "examples/dom/color_gallery.cpp":
-            continue
-
         # Turn "examples/component/button.cpp" → "example_component_button"
         name = src.replace("/", "_").replace(".cpp", "")
 
@@ -85,9 +63,9 @@ def generate_examples():
             name = name,
             srcs = [src],
             deps = [
-              ":component",
-              ":dom",
-              ":screen",
+                ":component",
+                ":dom",
+                ":screen",
             ],
             copts = windows_copts(),
         )

@@ -22,7 +22,11 @@ load(":bazel/ftxui.bzl", "windows_copts")
 ftxui_cc_library(
     name = "ftxui",
     hdrs = glob(["include/ftxui/**/*.hpp"]),
-    deps = [":component"],
+    deps = [
+        ":component",
+        ":dom",
+        ":screen",
+    ],
 )
 
 # @ftxui:screen is a module that provides a screen buffer and color management
@@ -41,6 +45,7 @@ ftxui_cc_library(
         "src/ftxui/screen/string_internal.hpp",
         "src/ftxui/screen/terminal.cpp",
         "src/ftxui/screen/util.hpp",
+        "src/ftxui/util/ref.cpp",
     ],
     hdrs = [
         "include/ftxui/screen/box.hpp",
@@ -55,6 +60,7 @@ ftxui_cc_library(
         "include/ftxui/screen/surface.hpp",
         "include/ftxui/screen/terminal.hpp",
         "include/ftxui/util/autoreset.hpp",
+        "include/ftxui/util/export.hpp",
         "include/ftxui/util/ref.hpp",
         "include/ftxui/util/warn_windows_macro.hpp",
     ],
@@ -126,12 +132,13 @@ ftxui_cc_library(
         "include/ftxui/dom/selection.hpp",
         "include/ftxui/dom/table.hpp",
         "include/ftxui/dom/take_any_args.hpp",
+        "include/ftxui/util/export.hpp",
         "include/ftxui/util/warn_windows_macro.hpp",
     ],
     deps = [":screen"],
 )
 
-# @ftxui:component is a library to create "dynamic" component renderering and
+# @ftxui:component is a library to create "dynamic" component rendering and
 # updating a ftxui::dom document on the screen. It is a higher level API than
 # ftxui:dom.
 #
@@ -155,7 +162,6 @@ ftxui_cc_library(
         "src/ftxui/component/event.cpp",
         "src/ftxui/component/hoverable.cpp",
         "src/ftxui/component/input.cpp",
-        "src/ftxui/component/loop.cpp",
         "src/ftxui/component/maybe.cpp",
         "src/ftxui/component/menu.cpp",
         "src/ftxui/component/modal.cpp",
@@ -163,6 +169,7 @@ ftxui_cc_library(
         "src/ftxui/component/renderer.cpp",
         "src/ftxui/component/resizable_split.cpp",
         "src/ftxui/component/app.cpp",
+        "src/ftxui/component/multi_receiver_buffer.hpp",
         "src/ftxui/component/slider.cpp",
         "src/ftxui/component/task.cpp",
         "src/ftxui/component/task_internal.hpp",
@@ -195,6 +202,7 @@ ftxui_cc_library(
         "include/ftxui/component/receiver.hpp",
         "include/ftxui/component/screen_interactive.hpp",
         "include/ftxui/component/task.hpp",
+        "include/ftxui/util/export.hpp",
         "include/ftxui/util/warn_windows_macro.hpp",
     ],
     deps = [

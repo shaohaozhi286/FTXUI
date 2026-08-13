@@ -10,29 +10,30 @@ option(FTXUI_ENABLE_INSTALL "Generate the install target" ON)
 option(FTXUI_QUIET "Set to ON for FTXUI to be quiet" OFF)
 option(ACECODE_TUI_INPUT_TRACE "Enable ACECode-specific FTXUI input tracing" OFF)
 
+set(FTXUI_ENABLE_CCACHE_DEFAULT OFF)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(FTXUI_ENABLE_CCACHE_DEFAULT ON)
+endif()
+option(FTXUI_ENABLE_CCACHE "Enable ccache support" ${FTXUI_ENABLE_CCACHE_DEFAULT})
+
+if (FTXUI_ENABLE_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if (CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  endif()
+endif()
+
 if (FTXUI_BUILD_MODULES)
   cmake_minimum_required(VERSION 3.28.2)
 else()
   cmake_minimum_required(VERSION 3.12)
 endif()
-
 project(ftxui
   LANGUAGES CXX
-  VERSION 6.1.9
+  VERSION 7.0.3
   DESCRIPTION "C++ Functional Terminal User Interface."
 )
-
-
-set(FTXUI_MICROSOFT_TERMINAL_FALLBACK_HELP_TEXT "On windows, assume the \
-terminal used will be one of Microsoft and use a set of reasonnable fallback \
-to counteract its implementations problems.")
-if (WIN32)
-  option(FTXUI_MICROSOFT_TERMINAL_FALLBACK
-    ${FTXUI_MICROSOFT_TERMINAL_FALLBACK_HELP_TEXT} ON)
-else()
-  option(FTXUI_MICROSOFT_TERMINAL_FALLBACK
-    ${FTXUI_MICROSOFT_TERMINAL_FALLBACK_HELP_TEXT} OFF)
-endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -48,6 +49,9 @@ add_library(screen
   include/ftxui/screen/screen.hpp
   include/ftxui/screen/string.hpp
   include/ftxui/screen/surface.hpp
+  include/ftxui/util/export.hpp
+  include/ftxui/util/ref.hpp
+  src/ftxui/util/ref.cpp
   src/ftxui/screen/box.cpp
   src/ftxui/screen/color.cpp
   src/ftxui/screen/color_info.cpp
@@ -67,6 +71,7 @@ add_library(dom
   include/ftxui/dom/requirement.hpp
   include/ftxui/dom/selection.hpp
   include/ftxui/dom/take_any_args.hpp
+  include/ftxui/util/export.hpp
   src/ftxui/dom/automerge.cpp
   src/ftxui/dom/selection_style.cpp
   src/ftxui/dom/blink.cpp
@@ -114,6 +119,7 @@ add_library(dom
 )
 
 add_library(component
+  include/ftxui/ftxui.hpp
   include/ftxui/component/animation.hpp
   include/ftxui/component/app.hpp
   include/ftxui/component/captured_mouse.hpp
@@ -126,6 +132,7 @@ add_library(component
   include/ftxui/component/receiver.hpp
   include/ftxui/component/screen_interactive.hpp
   include/ftxui/component/task.hpp
+  include/ftxui/util/export.hpp
   src/ftxui/component/animation.cpp
   src/ftxui/component/button.cpp
   src/ftxui/component/catch_event.cpp
@@ -138,7 +145,6 @@ add_library(component
   src/ftxui/component/event.cpp
   src/ftxui/component/hoverable.cpp
   src/ftxui/component/input.cpp
-  src/ftxui/component/loop.cpp
   src/ftxui/component/maybe.cpp
   src/ftxui/component/menu.cpp
   src/ftxui/component/modal.cpp
@@ -166,10 +172,18 @@ target_compile_definitions(component PRIVATE
   $<$<BOOL:${ACECODE_TUI_INPUT_TRACE}>:ACECODE_TUI_INPUT_TRACE=1>
 )
 
+add_library(ftxui INTERFACE)
+target_link_libraries(ftxui INTERFACE component)
+add_library(ftxui::ftxui ALIAS ftxui)
+
 include(cmake/ftxui_set_options.cmake)
 ftxui_set_options(screen)
 ftxui_set_options(dom)
 ftxui_set_options(component)
+
+set_target_properties(screen dom component PROPERTIES
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
 
 include(cmake/ftxui_coverage.cmake)
 ftxui_check_coverage(screen)
@@ -190,6 +204,10 @@ add_subdirectory(doc)
 
 # You can generate ./examples_modules/ by running
 # ./tools/generate_examples_modules.sh
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples_modules/CMakeLists.txt")
+if(FTXUI_BUILD_MODULES AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples_modules/CMakeLists.txt")
   add_subdirectory(examples_modules)
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/examples_ftxui_hpp/CMakeLists.txt")
+  add_subdirectory(examples_ftxui_hpp)
 endif()

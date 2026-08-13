@@ -1,3 +1,4 @@
+#include <string_view>
 // Copyright 2020 Arthur Sonzogni. All rights reserved.
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
@@ -17,16 +18,17 @@
 namespace ftxui {
 
 namespace {
-using Charset = std::array<std::string, 2>;  // NOLINT
-using Charsets = std::array<Charset, 6>;     // NOLINT
-// NOLINTNEXTLINE
-const Charsets charsets = {
-    Charset{"│", "─"},  // LIGHT
-    Charset{"╏", "╍"},  // DASHED
-    Charset{"┃", "━"},  // HEAVY
-    Charset{"║", "═"},  // DOUBLE
-    Charset{"│", "─"},  // ROUNDED
-    Charset{" ", " "},  // EMPTY
+using SeparatorCharset = std::array<std::string, 2>;        // NOLINT
+using SeparatorCharsets = std::array<SeparatorCharset, 6>;  // NOLINT
+
+const SeparatorCharsets charsets = {
+    // NOLINT
+    SeparatorCharset{"│", "─"},  // LIGHT
+    SeparatorCharset{"╏", "╍"},  // DASHED
+    SeparatorCharset{"┃", "━"},  // HEAVY
+    SeparatorCharset{"║", "═"},  // DOUBLE
+    SeparatorCharset{"│", "─"},  // ROUNDED
+    SeparatorCharset{" ", " "},  // EMPTY
 };
 
 class Separator : public Node {

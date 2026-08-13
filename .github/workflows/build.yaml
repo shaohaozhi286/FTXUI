@@ -11,38 +11,51 @@ on:
     branches:
       - main
 
+  # Weekly, with the full matrix:
+  schedule:
+    - cron: '0 3 * * 1'
+
+  workflow_dispatch:
+
+# Only keep the latest run per branch: pushing a new commit cancels the
+# in-flight checks for the previous one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
+
+  # Which platforms run for this event is defined in tools/ci_matrix.json.
+  select_matrix:
+    name: "Select matrix"
+    runs-on: ubuntu-latest
+    outputs:
+      bazel: ${{ steps.select.outputs.bazel }}
+      cmake: ${{ steps.select.outputs.cmake }}
+      meson: ${{ steps.select.outputs.meson }}
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v7
+
+      - name: "Select the matrices for ${{ github.event_name }}"
+        id: select
+        run: ./tools/select_ci_matrix.sh >> "$GITHUB_OUTPUT"
 
   test_bazel:
     name: "Bazel, ${{ matrix.cxx }}, ${{ matrix.os }}"
+    needs: select_matrix
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            cxx: g++
-            cc: gcc
-
-          - os: ubuntu-latest
-            cxx: clang++
-            cc: clang
-
-          - os: macos-latest
-            cxx: g++
-            cc: gcc
-
-          - os: macos-latest
-            cxx: clang++
-            cc: clang
-
-          - os: windows-latest
-            cxx: cl
-            cc: cl
+        include: ${{ fromJSON(needs.select_matrix.outputs.bazel) }}
 
     runs-on: ${{ matrix.os }}
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: "Build with Bazel"
         env:
@@ -65,36 +78,20 @@ jobs:
 
   test_cmake:
     name: "CMake, ${{ matrix.compiler }}, ${{ matrix.os }}"
+    needs: select_matrix
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux GCC
-            os: ubuntu-latest
-            compiler: gcc
-
-          - name: Linux Clang
-            os: ubuntu-latest
-            compiler: llvm
-            gcov_executable: "llvm-cov gcov"
-
-          - name: MacOS clang
-            os: macos-latest
-            compiler: llvm
-            gcov_executable: "llvm-cov gcov"
-
-          - name: Windows MSVC
-            os: windows-latest
-            compiler: cl
+        include: ${{ fromJSON(needs.select_matrix.outputs.cmake) }}
 
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get number of CPU cores
-        uses: SimenB/github-actions-cpu-cores@v1
+        uses: SimenB/github-actions-cpu-cores@v3
         id: cpu-cores
 
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: "Setup Cpp"
         uses: aminya/setup-cpp@v1
@@ -106,7 +103,10 @@ jobs:
           clangtidy: false
           cppcheck: false
           gcovr: "5.0"
-          opencppcoverage: true
+          # Only installed when the coverage step below actually runs. It is a
+          # slow chocolatey install of a third party download, so pull requests
+          # must not depend on it being reachable.
+          opencppcoverage: ${{ contains(matrix.os, 'windows') && github.event_name != 'pull_request' }}
 
       # make sure coverage is only enabled for Debug builds, since it sets -O0
       # to make sure coverage has meaningful results
@@ -156,8 +156,18 @@ jobs:
           .
           --gcov-executable '${{ matrix.gcov_executable }}';
 
+      # OpenCppCoverage instruments every ctest child process and takes ~33
+      # minutes, against ~1 minute for the tests alone. Pull requests run the
+      # tests bare; the Windows coverage report comes from the weekly full
+      # matrix, which is the only other event scheduling a Windows job.
+      - name: Windows - Test
+        if: runner.os == 'Windows' && github.event_name == 'pull_request'
+        working-directory: ./build
+        run: >
+          ctest -C Debug --rerun-failed --output-on-failure;
+
       - name: Windows - Test and coverage
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && github.event_name != 'pull_request'
         working-directory: ./build
         run: >
           OpenCppCoverage.exe
@@ -167,7 +177,8 @@ jobs:
           ctest -C Debug --rerun-failed --output-on-failure;
 
       - name: Publish to codecov
-        uses: codecov/codecov-action@v3
+        if: runner.os != 'Windows' || github.event_name != 'pull_request'
+        uses: codecov/codecov-action@v7
         with:
           flags: ${{ runner.os }}
           name: ${{ runner.os }}-coverage
@@ -184,7 +195,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: "Setup Cpp"
         uses: aminya/setup-cpp@v1
@@ -216,3 +227,80 @@ jobs:
           -DFTXUI_ENABLE_INSTALL=ON
           -DFTXUI_DEV_WARNINGS=ON ;
           cmake --build .
+
+  test_umbrella_header:
+    name: "Test umbrella header"
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: llvm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup Cpp"
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: ${{ matrix.compiler }}
+          vcvarsall: ${{ contains(matrix.os, 'windows' )}}
+          cmake: true
+          ninja: true
+
+      - name: "Generate ./examples_ftxui_hpp"
+        run: >
+          ./tools/generate_examples_ftxui_hpp.sh
+
+      - name: "Build examples"
+        run: >
+          mkdir build;
+          cd build;
+          cmake ..
+          -DCMAKE_GENERATOR=Ninja
+          -DFTXUI_BUILD_EXAMPLES=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DFTXUI_BUILD_DOCS=OFF
+          -DFTXUI_BUILD_TESTS=OFF
+          -DFTXUI_BUILD_TESTS_FUZZER=OFF
+          -DFTXUI_ENABLE_INSTALL=ON
+          -DFTXUI_DEV_WARNINGS=ON ;
+          cmake --build .
+
+  test_meson:
+    name: "Meson, ${{ matrix.compiler }}, ${{ matrix.os }}"
+    needs: select_matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select_matrix.outputs.meson) }}
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v7
+
+      - name: "Setup Cpp"
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: ${{ matrix.compiler }}
+          vcvarsall: ${{ contains(matrix.os, 'windows' )}}
+          cmake: false
+          ninja: true
+
+      - name: "Setup Python"
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: "Install Meson"
+        run: pip install meson
+
+      - name: "Configure Meson"
+        run: meson setup build_meson -Dtests=true -Dexamples=true
+
+      - name: "Build with Meson"
+        run: ninja -C build_meson
+
+      - name: "Test with Meson"
+        run: meson test -C build_meson

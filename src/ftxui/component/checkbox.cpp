@@ -2,8 +2,10 @@
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 #include <functional>  // for function
+#include <string>      // for string
 #include <utility>     // for move
 
+#include "ftxui/component/app.hpp"
 #include "ftxui/component/component.hpp"       // for Make, Checkbox
 #include "ftxui/component/component_base.hpp"  // for Component, ComponentBase
 #include "ftxui/component/component_options.hpp"  // for CheckboxOption, EntryState
@@ -48,7 +50,7 @@ class CheckboxBase : public ComponentBase, public CheckboxOption {
     hovered_ = false;
     if (event == Event::Character(' ') || event == Event::Return) {
       *checked = !*checked;
-      on_change();
+      App::PostEventOrExecute(on_change);
       TakeFocus();
       return true;
     }
@@ -69,7 +71,7 @@ class CheckboxBase : public ComponentBase, public CheckboxOption {
     if (event.mouse().button == Mouse::Left &&
         event.mouse().motion == Mouse::Pressed) {
       *checked = !*checked;
-      on_change();
+      App::PostEventOrExecute(on_change);
       return true;
     }
 
@@ -102,7 +104,7 @@ class CheckboxBase : public ComponentBase, public CheckboxOption {
 /// ### Output
 ///
 /// ```bash
-/// ☐ Make a sandwitch
+/// ☐ Make a sandwich
 /// ```
 // NOLINTNEXTLINE
 Component Checkbox(CheckboxOption option) {
@@ -129,7 +131,7 @@ Component Checkbox(CheckboxOption option) {
 /// ### Output
 ///
 /// ```bash
-/// ☐ Make a sandwitch
+/// ☐ Make a sandwich
 /// ```
 // NOLINTNEXTLINE
 Component Checkbox(ConstStringRef label, bool* checked, CheckboxOption option) {

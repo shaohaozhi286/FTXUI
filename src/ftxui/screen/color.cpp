@@ -15,7 +15,7 @@
 
 namespace ftxui {
 namespace {
-const std::array<const char*, 33> palette16code = {
+const std::array<const char*, 32> palette16code = {
     "30", "40",   //
     "31", "41",   //
     "32", "42",   //
@@ -101,12 +101,20 @@ Color::Color(Palette1 /*value*/) : Color() {}
 
 /// @brief Build a color using the Palette16 colors.
 Color::Color(Palette16 index)
-    : type_(ColorType::Palette16), red_(index), alpha_(255) {}
+    : type_(ColorType::Palette16), red_(index), alpha_(255) {
+  if (Terminal::ColorSupport() == Terminal::Color::Palette1) {
+    type_ = ColorType::Palette1;
+  }
+}
 
 /// @brief Build a color using Palette256 colors.
 Color::Color(Palette256 index)
     : type_(ColorType::Palette256), red_(index), alpha_(255) {
   if (Terminal::ColorSupport() >= Terminal::Color::Palette256) {
+    return;
+  }
+  if (Terminal::ColorSupport() == Terminal::Color::Palette1) {
+    type_ = ColorType::Palette1;
     return;
   }
   type_ = ColorType::Palette16;
@@ -127,6 +135,10 @@ Color::Color(uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha)
       blue_(blue),
       alpha_(alpha) {
   if (Terminal::ColorSupport() == Terminal::Color::TrueColor) {
+    return;
+  }
+  if (Terminal::ColorSupport() == Terminal::Color::Palette1) {
+    type_ = ColorType::Palette1;
     return;
   }
 
@@ -258,11 +270,11 @@ Color Color::Interpolate(float t, const Color& a, const Color& b) {
   // https://en.wikipedia.org/wiki/Gamma_correction
   auto interp = [t](uint8_t a_u, uint8_t b_u) {
     constexpr float gamma = 2.2F;
-    const float a_f = powf(a_u, gamma);
-    const float b_f = powf(b_u, gamma);
+    const float a_f = std::pow(a_u, gamma);
+    const float b_f = std::pow(b_u, gamma);
     const float c_f = a_f * (1.0F - t) +  //
                       b_f * t;
-    return static_cast<uint8_t>(powf(c_f, 1.F / gamma));
+    return static_cast<uint8_t>(std::pow(c_f, 1.F / gamma));
   };
   return Color::RGB(interp(a_r, b_r),   //
                     interp(a_g, b_g),   //

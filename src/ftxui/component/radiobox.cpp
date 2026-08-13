@@ -2,6 +2,7 @@
 // Use of this source code is governed by the MIT license that can be found in
 // the LICENSE file.
 #include <functional>  // for function
+#include <string>      // for string
 #include <utility>     // for move
 #include <vector>      // for vector
 
@@ -91,14 +92,14 @@ class RadioboxBase : public ComponentBase, public RadioboxOption {
 
       if (hovered_ != old_hovered) {
         focused_entry() = hovered_;
-        on_change();
+        App::PostEventOrExecute(on_change);
         return true;
       }
     }
 
     if (event == Event::Character(' ') || event == Event::Return) {
       selected() = hovered_;
-      on_change();
+      App::PostEventOrExecute(on_change);
       return true;
     }
 
@@ -122,7 +123,7 @@ class RadioboxBase : public ComponentBase, public RadioboxOption {
           event.mouse().motion == Mouse::Pressed) {
         if (selected() != i) {
           selected() = i;
-          on_change();
+          App::PostEventOrExecute(on_change);
         }
 
         return true;
@@ -148,7 +149,7 @@ class RadioboxBase : public ComponentBase, public RadioboxOption {
     hovered_ = util::clamp(hovered_, 0, size() - 1);
 
     if (hovered_ != old_hovered) {
-      on_change();
+      App::PostEventOrExecute(on_change);
     }
 
     return true;

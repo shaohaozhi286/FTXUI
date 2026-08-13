@@ -16,6 +16,9 @@ permissions:
   # Needed to upload release assets
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     name: "Create release"
@@ -24,7 +27,7 @@ jobs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: "Create release"
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         id: create_release
         with:
           draft: true
@@ -47,16 +50,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Get number of CPU cores
-        uses: SimenB/github-actions-cpu-cores@v1
+        uses: SimenB/github-actions-cpu-cores@v3
         id: cpu-cores
 
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: "Install cmake"
         uses: lukka/get-cmake@latest
 
-      - name: "Build packages"
+      - name: "Build packages (Linux / macOS)"
+        if: runner.os != 'Windows'
         run: >
           mkdir build;
           cd build;
@@ -70,6 +74,24 @@ jobs:
           -DFTXUI_ENABLE_INSTALL=ON
           -DFTXUI_DEV_WARNINGS=ON ;
           cmake --build . --target package;
+
+      - name: "Build packages (Windows — Debug + Release)"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir build
+          cd build
+          cmake .. `
+            -DCMAKE_BUILD_PARALLEL_LEVEL=${{ steps.cpu-cores.outputs.count }} `
+            -DFTXUI_BUILD_DOCS=OFF `
+            -DFTXUI_BUILD_EXAMPLES=OFF `
+            -DFTXUI_BUILD_TESTS=OFF `
+            -DFTXUI_BUILD_TESTS_FUZZER=OFF `
+            -DFTXUI_ENABLE_INSTALL=ON `
+            -DFTXUI_DEV_WARNINGS=OFF
+          cmake --build . --config Debug
+          cmake --build . --config Release
+          cpack -C "Debug;Release"
 
       - uses: shogo82148/actions-upload-release-asset@v1
         with:
@@ -86,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "Checkout repository"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: "Create source package"
         run: >
@@ -97,4 +119,25 @@ jobs:
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: source.tar.gz
+          overwrite: true
+
+  amalgamate:
+    name: "Amalgamate"
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v7
+
+      - name: "Generate amalgamated files"
+        run: ./tools/amalgamate.py
+
+      - name: "Create archive"
+        run: zip ftxui-amalgamated.zip ftxui.hpp ftxui.cpp ftxui_all.hpp LICENSE
+
+      - name: "Upload ftxui-amalgamated.zip"
+        uses: shogo82148/actions-upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.release.outputs.upload_url }}
+          asset_path: ftxui-amalgamated.zip
           overwrite: true
