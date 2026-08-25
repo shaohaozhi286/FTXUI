@@ -97,6 +97,15 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   /// @note This feature is only available on POSIX systems (Linux/macOS).
   void HandlePipedInput(bool enable = true);
 
+  // ACECODE-PATCH(synchronized-output): opt-in atomic frame presentation via
+  // DEC mode 2026. When enabled, every non-empty TerminalFlush() buffer is
+  // bracketed with CSI ?2026h / CSI ?2026l so terminals supporting
+  // synchronized updates render each frame atomically instead of exposing
+  // half-drawn intermediate states (flicker). Disabled by default; terminals
+  // that do not implement the mode ignore the sequences harmlessly, but the
+  // embedding application is expected to gate this on terminal detection.
+  void EnableSynchronizedOutput(bool enable = true);
+
   /// @brief Return the currently active app, nullptr if none.
   static App* Active();
 
