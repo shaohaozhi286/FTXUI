@@ -105,6 +105,8 @@ struct App::Internal {
 
   bool track_mouse_ = true;
   bool kitty_keyboard_enabled_ = false;
+  // ACECODE-PATCH(synchronized-output): see EnableSynchronizedOutput().
+  bool synchronized_output_enabled_ = false;
   bool mouse_tracking_enabled_ = false;
   bool defer_mouse_tracking_until_cursor_position_ = false;
 
@@ -1568,6 +1570,17 @@ void App::Internal::TerminalSend(std::string_view s) {
 }
 
 void App::Internal::TerminalFlush() {
+  // ACECODE-PATCH(synchronized-output): when enabled, bracket the accumulated
+  // update in CSI ?2026h / ?2026l so terminals implementing DEC mode 2026
+  // buffer it and present the whole frame atomically, instead of exposing
+  // half-drawn intermediate states (flicker). Both sequences travel in the
+  // same single write as the frame payload, so the bracket cannot be split
+  // mid-frame by this app; if the process dies anyway, terminals auto-release
+  // the mode after their own timeout (~150 ms). Empty buffers are left alone.
+  if (synchronized_output_enabled_ && !output_buffer.empty()) {
+    output_buffer.insert(0, "\033[?2026h");
+    output_buffer += "\033[?2026l";
+  }
   // Emscripten doesn't implement flush. We interpret zero as flush.
   output_buffer += '\0';
   std::cout << output_buffer << std::flush;
@@ -1946,6 +1959,12 @@ void App::TrackMouse(bool enable) {
 
 void App::EnableKittyKeyboard(bool enable) {
   internal_->kitty_keyboard_enabled_ = enable;
+}
+
+// ACECODE-PATCH(synchronized-output): opt-in atomic frame presentation via
+// DEC mode 2026. Must be called before Loop().
+void App::EnableSynchronizedOutput(bool enable) {
+  internal_->synchronized_output_enabled_ = enable;
 }
 
 void App::HandlePipedInput(bool enable) {

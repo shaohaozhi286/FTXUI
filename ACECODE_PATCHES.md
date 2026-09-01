@@ -165,3 +165,31 @@ treated as a separately selectable text cell.
 
 **Risk on rebase:** re-check selection metadata if upstream changes wide-glyph
 cell construction.
+
+## synchronized-output
+
+**Goal:** let an application opt into atomic frame presentation via DEC mode
+2026 (`CSI ?2026h` / `CSI ?2026l`), so terminals that implement synchronized
+updates render each frame atomically instead of exposing half-drawn
+intermediate states (flicker). ACECode uses this to eliminate flicker during
+high-frequency stream updates. Disabled by default; terminals that do not
+implement the mode ignore the sequences harmlessly, but the embedding
+application is expected to gate this on terminal detection.
+
+**Files touched:**
+
+- `include/ftxui/component/app.hpp`
+  - Adds the default-off `App::EnableSynchronizedOutput(bool)` option, marked
+    with `ACECODE-PATCH(synchronized-output)`.
+- `src/ftxui/component/app.cpp`
+  - `App::Internal` gains `synchronized_output_enabled_`.
+  - `App::Internal::TerminalFlush()` brackets every non-empty output buffer
+    with `CSI ?2026h` / `CSI ?2026l` in the same single write as the frame
+    payload, so the bracket cannot be split mid-frame. Empty buffers are left
+    alone.
+  - `App::EnableSynchronizedOutput(bool)` forwards to the Internal flag.
+
+**Risk on rebase:** if upstream renames the Internal output buffer or changes
+`TerminalFlush()`, re-apply the bracket at the top of the flush body. The
+single-write guarantee is what makes the bracket safe; keep it inside the same
+`std::cout << buffer` call.
