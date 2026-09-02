@@ -106,6 +106,16 @@ class FTXUI_EXPORT(COMPONENT) App : public Screen {
   // embedding application is expected to gate this on terminal detection.
   void EnableSynchronizedOutput(bool enable = true);
 
+  // ACECODE-PATCH(hover-motion): opt-in passive mouse motion reporting via
+  // DECSET ?1003 (any-event tracking), which the idle-mouse-redraw patch
+  // intentionally downgraded to ?1002 (button-event). When enabled, pointer
+  // movement with no button pressed is reported to the component as
+  // Mouse::Moved events; RunOnce() dispatches them but does not invalidate the
+  // frame by itself, so hover surfaces only redraw when they explicitly ask.
+  // Disabled by default; only enable on terminals that handle any-event
+  // reporting without redraw churn.
+  void EnableMouseHoverMotion(bool enable = true);
+
   /// @brief Return the currently active app, nullptr if none.
   static App* Active();
 

@@ -193,3 +193,40 @@ application is expected to gate this on terminal detection.
 `TerminalFlush()`, re-apply the bracket at the top of the flush body. The
 single-write guarantee is what makes the bracket safe; keep it inside the same
 `std::cout << buffer` call.
+
+## hover-motion
+
+**Goal:** let an application opt into passive hover motion reporting via
+DECSET ?1003 (any-event tracking), which the `idle-mouse-redraw` patch
+intentionally downgraded to ?1002 (button-event). ACECode uses this to show a
+hover tooltip with the real URL while the pointer rests on a link. Disabled by
+default; the embedding application is expected to gate this on terminal
+detection (legacy conhost stays on ?1002).
+
+**Files touched:**
+
+- `include/ftxui/component/app.hpp`
+  - Adds the default-off `App::EnableMouseHoverMotion(bool)` option, marked
+    with `ACECODE-PATCH(hover-motion)`.
+- `src/ftxui/component/app.cpp`
+  - `App::Internal` gains `hover_motion_enabled_`.
+  - `App::EnableMouseHoverMotion(bool)` forwards to the Internal flag.
+  - `App::Internal::EnableMouseTracking()` sends `?1003h`
+    (`DECMode::kMouseAnyEvent`) instead of `?1002h`
+    (`DECMode::kMouseBtnEventMouse`) when hover motion is enabled. The
+    existing uninstall sequence already resets `?1003l`, so no cleanup change
+    is needed.
+  - `App::Internal::RunOnce()` classifies no-button `Mouse::Moved` events as
+    passive when hover motion is enabled; they are still dispatched to the
+    component but do not force `frame_valid_ = false` — the component drives
+    redraws explicitly via `RequestAnimationFrame()`.
+- `src/ftxui/component/app_test.cpp`
+  - `MouseHoverMotionDisabledByDefault`: install emits `?1002h`, never
+    `?1003h`.
+  - `MouseHoverMotionEnabledSendsAnyEventTracking`: install emits `?1003h`
+    (and no `?1002h`), uninstall emits `?1003l`.
+
+**Risk on rebase:** if upstream changes `EnableMouseTracking()` or the
+install/uninstall escape sequence set, preserve the default-off ?1002 behavior
+and the "passive motion does not invalidate frames" principle. The uninstall
+path already resets `?1003l`; keep that.

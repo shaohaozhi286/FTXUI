@@ -425,6 +425,48 @@ TEST(App, KittyKeyboardWithRestoredIOIsBalanced) {
   EXPECT_LT(push_2, pop_2);
 }
 
+// ACECODE-PATCH(hover-motion): passive hover motion is opt-in. By default the
+// App installs button-event tracking (?1002) and never requests any-event
+// (?1003) reporting.
+TEST(App, MouseHoverMotionDisabledByDefault) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FixedSize(2, 1);
+    auto component = Renderer([&] { return text("AB"); });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  EXPECT_NE(output.find("\x1B[?1002h"), std::string::npos);
+  EXPECT_EQ(output.find("\x1B[?1003h"), std::string::npos);
+}
+
+// ACECODE-PATCH(hover-motion): with EnableMouseHoverMotion() the App restores
+// any-event tracking (?1003) so passive Mouse::Moved events reach the
+// component, and it is disabled again on uninstall.
+TEST(App, MouseHoverMotionEnabledSendsAnyEventTracking) {
+  std::string output;
+  {
+    CoutCapture capture;
+    auto screen = App::FixedSize(2, 1);
+    screen.EnableMouseHoverMotion();
+    auto component = Renderer([&] { return text("AB"); });
+    {
+      Loop loop(&screen, component);
+      loop.RunOnce();
+    }
+    output = capture.Get();
+  }
+
+  EXPECT_EQ(output.find("\x1B[?1002h"), std::string::npos);
+  EXPECT_EQ(CountOccurrences(output, "\x1B[?1003h"), 1U);
+  EXPECT_EQ(CountOccurrences(output, "\x1B[?1003l"), 1U);
+}
+
 TEST(App, MoveConstructor) {
   auto screen = App::FixedSize(10, 10);
   App screen2 = std::move(screen);
