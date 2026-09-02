@@ -1105,14 +1105,17 @@ void App::Internal::HandleTask(Component component, Task& task) {
     if constexpr (std::is_same_v<T, Event>) {
 
       if (arg.is_cursor_position()) {
-        const int previous_cursor_x = cursor_x_;
-        const int previous_cursor_y = cursor_y_;
         const int reported_cursor_x = arg.cursor_x();
         const int reported_cursor_y = arg.cursor_y();
         cursor_position_request.OnReply();
         const bool usable_cursor_position =
             CursorPositionIsUsable(reported_cursor_x, reported_cursor_y);
 #if ACECODE_TUI_INPUT_TRACE
+        // Declared only under tracing: in the default (non-trace) build these
+        // values are never read, so keep them inside the guard to avoid
+        // -Wunused-variable under -Werror.
+        const int previous_cursor_x = cursor_x_;
+        const int previous_cursor_y = cursor_y_;
         AcecodeTrace("CursorPosition raw=(" +
                      std::to_string(reported_cursor_x) + "," +
                      std::to_string(reported_cursor_y) + ") previous=(" +
@@ -1515,12 +1518,14 @@ void App::Internal::Draw(Component component) {
   // Periodically request the terminal emulator the frame position relative to
   // the screen. This is useful for converting mouse position reported in
   // screen's coordinates to frame's coordinates.
-  const bool cursor_position_needs_refresh =
-      IsTerminalOutputPrimaryScreen() &&
-      (defer_mouse_tracking_until_cursor_position_ ||
-       !CursorPositionIsUsable(cursor_x_, cursor_y_));
   if (!use_alternative_screen_ && is_stdout_a_tty_) {
 #if ACECODE_TUI_INPUT_TRACE
+    // Declared only under tracing: in the default (non-trace) build this is
+    // never read, so keep it inside the guard to avoid -Wunused-variable.
+    const bool cursor_position_needs_refresh =
+        IsTerminalOutputPrimaryScreen() &&
+        (defer_mouse_tracking_until_cursor_position_ ||
+         !CursorPositionIsUsable(cursor_x_, cursor_y_));
     AcecodeTrace("Draw request cursor DSR frame=" +
                  std::to_string(frame_count_) + " resized=" +
                  std::to_string(resized ? 1 : 0) +
