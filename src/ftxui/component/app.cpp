@@ -107,6 +107,8 @@ struct App::Internal {
   bool kitty_keyboard_enabled_ = false;
   // ACECODE-PATCH(synchronized-output): see EnableSynchronizedOutput().
   bool synchronized_output_enabled_ = false;
+  // ACECODE-PATCH(hover-motion): see EnableMouseHoverMotion().
+  bool hover_motion_enabled_ = false;
   bool mouse_tracking_enabled_ = false;
   bool defer_mouse_tracking_until_cursor_position_ = false;
 
@@ -662,7 +664,11 @@ void App::Internal::EnableMouseTracking(bool flush) {
   // ACECODE-PATCH(idle-mouse-redraw): use button-event tracking instead of
   // any-event tracking. Passive hover motion should not generate events, but
   // clicks, wheel events, and button-held drags still need to be reported.
-  TerminalSend(Set({DECMode::kMouseBtnEventMouse}));
+  // ACECODE-PATCH(hover-motion): unless the embedding application opted into
+  // passive hover motion via EnableMouseHoverMotion(), in which case restore
+  // any-event (?1003) reporting so Mouse::Moved reaches the component.
+  TerminalSend(Set({hover_motion_enabled_ ? DECMode::kMouseAnyEvent
+                                          : DECMode::kMouseBtnEventMouse}));
   TerminalSend(Set({DECMode::kMouseUrxvtMode}));
   TerminalSend(Set({DECMode::kMouseSgrExtMode}));
   if (flush) {
@@ -877,8 +883,11 @@ void App::Internal::Install() {
   if (track_mouse_) {
     on_exit_functions.emplace(
         [this] { TerminalSend(Reset({DECMode::kMouseVt200})); });
+    // ACECODE-PATCH(hover-motion): mirror the enable-side selection — reset
+    // any-event (?1003) when hover motion was opted into, button-event (?1002)
+    // otherwise.
     on_exit_functions.emplace(
-        [this] { TerminalSend(Reset({DECMode::kMouseBtnEventMouse})); });
+        [this] { TerminalSend(Reset({hover_motion_enabled_ ? DECMode::kMouseAnyEvent : DECMode::kMouseBtnEventMouse})); });
     on_exit_functions.emplace(
         [this] { TerminalSend(Reset({DECMode::kMouseUrxvtMode})); });
     on_exit_functions.emplace(
@@ -1177,6 +1186,11 @@ void App::Internal::HandleTask(Component component, Task& task) {
       bool trace_mouse = false;
       Mouse raw_mouse;
 #endif
+      // ACECODE-PATCH(hover-motion): a passive hover-motion event (no button
+      // pressed, pointer moved) must still reach the component so hover UI can
+      // react, but it must not force a frame redraw by itself. The component
+      // requests redraws explicitly (RequestAnimationFrame) when needed.
+      bool passive_motion = false;
       if (arg.is_mouse()) {
 #if ACECODE_TUI_INPUT_TRACE
         raw_mouse = arg.mouse();
@@ -1211,6 +1225,11 @@ void App::Internal::HandleTask(Component component, Task& task) {
         }
         arg.mouse().x -= cursor_x_;
         arg.mouse().y -= cursor_y_;
+        // ACECODE-PATCH(hover-motion): only classify as passive when hover
+        // motion was opted into; otherwise behavior is unchanged.
+        passive_motion = hover_motion_enabled_ &&
+                         arg.mouse().button == Mouse::None &&
+                         arg.mouse().motion == Mouse::Moved;
 #if ACECODE_TUI_INPUT_TRACE
         if (trace_mouse) {
           AcecodeTrace("Mouse adjusted " + MouseForTrace(arg.mouse()) +
@@ -1260,7 +1279,11 @@ void App::Internal::HandleTask(Component component, Task& task) {
       }
 #endif
       
-      frame_valid_ = false;
+      // ACECODE-PATCH(hover-motion): passive hover motion does not invalidate
+      // the frame; the component drives redraws itself.
+      if (!passive_motion) {
+        frame_valid_ = false;
+      }
       return;
     }
 
@@ -1965,6 +1988,12 @@ void App::EnableKittyKeyboard(bool enable) {
 // DEC mode 2026. Must be called before Loop().
 void App::EnableSynchronizedOutput(bool enable) {
   internal_->synchronized_output_enabled_ = enable;
+}
+
+// ACECODE-PATCH(hover-motion): opt-in passive mouse motion reporting via
+// DECSET ?1003. Must be called before Loop().
+void App::EnableMouseHoverMotion(bool enable) {
+  internal_->hover_motion_enabled_ = enable;
 }
 
 void App::HandlePipedInput(bool enable) {
